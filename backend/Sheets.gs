@@ -338,7 +338,26 @@ function readBlock_(sheetName, blockName) {
 }
 
 /**
+ * Строка занята маркером какого-нибудь блока листа объекта?
+ * Признак «слипшейся» разметки: у пустого блока нет собственных строк данных,
+ * и запись без проверки попадает прямо в маркер следующего блока.
+ * @param {Sheet} sh
+ * @param {number} row
+ * @return {boolean}
+ */
+function isMarkerRow_(sh, row) {
+  if (!sh || !row || row < 1) return false;
+  const value = str_(sh.getRange(row, 1).getValue()).toUpperCase();
+  if (!value) return false;
+  return Object.keys(CONFIG.OBJECT_BLOCKS).some(function (key) {
+    return CONFIG.OBJECT_BLOCKS[key] === value;
+  });
+}
+
+/**
  * Создание блока в листе объекта, если его ещё нет.
+ * Новый блок всегда отделяется пустой строкой: иначе следующий блок
+ * «прилипает» к данным предыдущего и разбор структуры листа путается.
  * @param {string} sheetName
  * @param {string} blockName
  * @param {Array<string>} header
@@ -349,12 +368,13 @@ function ensureBlock_(sheetName, blockName, header) {
   let sh = ss.getSheetByName(sheetName);
   if (!sh) sh = ss.insertSheet(sheetName);
 
-  let blocks = parseBlocks_(sheetName);
+  const blocks = parseBlocks_(sheetName);
   if (blocks[blockName]) return blocks[blockName];
 
-  const startRow = Math.max(sh.getLastRow() + 1, 1);
-  const markerRange = sh.getRange(startRow, 1);
-  markerRange.setValue(blockName).setFontWeight('bold').setBackground('#dfe7f1');
+  const lastRow = sh.getLastRow();
+  const startRow = lastRow === 0 ? 1 : lastRow + 2;
+
+  sh.getRange(startRow, 1).setValue(blockName).setFontWeight('bold').setBackground('#dfe7f1');
   sh.getRange(startRow + 1, 1, 1, header.length).setValues([header])
     .setFontWeight('bold').setBackground('#eef2f7');
   return parseBlocks_(sheetName)[blockName];
@@ -370,8 +390,17 @@ function ensureBlock_(sheetName, blockName, header) {
  */
 function appendBlockRow_(sheetName, blockName, header, obj) {
   const sh = sheetByName_(sheetName);
-  const block = ensureBlock_(sheetName, blockName, header);
-  const target = block.lastRow && block.lastRow >= block.firstRow ? block.lastRow + 1 : block.firstRow;
+  let block = ensureBlock_(sheetName, blockName, header);
+  let target = block.lastRow >= block.firstRow ? block.lastRow + 1 : block.firstRow;
+
+  // Разметка могла слипнуться (лист создан старой версией приложения):
+  // вставляем пустую строку и пересчитываем блок, чтобы не затереть чужую шапку.
+  if (isMarkerRow_(sh, target)) {
+    sh.insertRowBefore(target);
+    block = parseBlocks_(sheetName)[blockName];
+    target = block.lastRow >= block.firstRow ? block.lastRow + 1 : block.firstRow;
+  }
+
   sh.getRange(target, 1, 1, header.length).setValues([toRowValues_(header, obj)]);
   return target;
 }
@@ -385,9 +414,15 @@ function appendBlockRow_(sheetName, blockName, header, obj) {
  */
 function replaceBlock_(sheetName, blockName, header, objs) {
   const sh = sheetByName_(sheetName);
-  const block = ensureBlock_(sheetName, blockName, header);
-  const oldCount = Math.max(0, block.lastRow - block.firstRow + 1);
+  let block = ensureBlock_(sheetName, blockName, header);
   const values = (objs || []).map(function (o) { return toRowValues_(header, o); });
+
+  if (values.length && isMarkerRow_(sh, block.firstRow)) {
+    sh.insertRowBefore(block.firstRow);
+    block = parseBlocks_(sheetName)[blockName];
+  }
+
+  const oldCount = Math.max(0, block.lastRow - block.firstRow + 1);
 
   if (values.length) {
     sh.getRange(block.firstRow, 1, values.length, header.length).setValues(values);
@@ -415,9 +450,10 @@ function deleteBlockRow_(sheetName, rowNumber) {
 /**
  * Приведение шапки листа к актуальной схеме.
  * Если лист пуст — шапка перезаписывается. Если данные есть, лист не трогаем:
- * лучше предупредить, чем потерять чужие записи.
+ * лучше предупредить, чем потерять чужие записи. Исключение — дополнение
+ * шапки новыми колонками справа: это безопасно, старые данные не сдвигаются.
  * @param {string} name — имя листа из SCHEMA
- * @return {string} 'ок' | 'создан' | 'обновлена' | 'данные есть, шапка не тронута' | 'нет схемы'
+ * @return {string} 'ок' | 'создан' | 'обновлена' | 'дополнена' | 'данные есть, шапка не тронута' | 'нет схемы'
  */
 function ensureSchema_(name) {
   const header = SCHEMA[name];
@@ -436,6 +472,17 @@ function ensureSchema_(name) {
   const same = current.length === header.length &&
     header.every(function (key, index) { return current[index] === key; });
   if (same) return 'ок';
+
+  // Дополнение справа: старая шапка — начало новой, добавляются только новые
+  // колонки. Данные не сдвигаются, поэтому это безопасно даже при наличии строк.
+  const isExtension = current.length < header.length &&
+    current.every(function (key, index) { return key === header[index]; });
+  if (isExtension) {
+    sh.getRange(1, current.length + 1, 1, header.length - current.length)
+      .setValues([header.slice(current.length)])
+      .setFontWeight('bold').setBackground('#eef2f7');
+    return 'дополнена';
+  }
 
   if (sh.getLastRow() > 1) {
     logError_('Sheets.ensureSchema_', 'Шапка листа «' + name + '» отличается от схемы, но в листе есть данные', {
@@ -465,22 +512,40 @@ function writeHeader_(sh, header) {
 }
 
 /**
- * Перенос листа в другую таблицу: сначала копия, потом удаление оригинала.
+ * Перенос листа между таблицами: сначала копия, потом удаление оригинала.
  * Используется для корзины и архива — данные не пропадают, а переезжают.
+ *
+ * Копия обязательно проверяется: если она не оказалась в целевой таблице,
+ * оригинал не удаляем. Потерять лист объекта молча — худшее из возможного.
+ *
+ * @param {Spreadsheet} sourceSs — откуда
+ * @param {Spreadsheet} targetSs — куда
+ * @param {string} sheetName
+ * @return {string} имя листа в целевой таблице (может отличаться от исходного)
+ */
+function moveSheetBetween_(sourceSs, targetSs, sheetName) {
+  assert_(sourceSs && targetSs, 'Не указана таблица для переноса листа.', 'VALIDATION');
+
+  const sh = sourceSs.getSheetByName(sheetName);
+  assert_(sh, 'Лист «' + sheetName + '» не найден.', 'NOT_FOUND');
+  assert_(sourceSs.getSheets().length > 1, 'Нельзя перенести единственный лист таблицы.', 'VALIDATION');
+
+  const copy = sh.copyTo(targetSs);
+  assert_(copy && copy.getParent() && copy.getParent().getId() === targetSs.getId(),
+    'Не удалось перенести лист «' + sheetName + '» в таблицу «' + targetSs.getName() + '».', 'ERROR');
+
+  sourceSs.deleteSheet(sh);
+  return copy.getName();
+}
+
+/**
+ * Перенос листа из основной таблицы в другую (корзина, архив).
  * @param {string} sheetName
  * @param {Spreadsheet} target
  * @return {string} имя листа в целевой таблице
  */
 function moveSheetTo_(sheetName, target) {
-  const source = ss_();
-  const sh = source.getSheetByName(sheetName);
-  assert_(sh, 'Лист «' + sheetName + '» не найден.', 'NOT_FOUND');
-  assert_(target, 'Не указана целевая таблица.', 'VALIDATION');
-  assert_(source.getSheets().length > 1, 'Нельзя перенести единственный лист таблицы.', 'VALIDATION');
-
-  const copy = sh.copyTo(target);
-  source.deleteSheet(sh);
-  return copy.getName();
+  return moveSheetBetween_(ss_(), target, sheetName);
 }
 
 /**
@@ -492,4 +557,38 @@ function moveSheetTo_(sheetName, target) {
 function copySheetTo_(sheetName, target) {
   const sh = requireSheet_(sheetName);
   return sh.copyTo(target).getName();
+}
+
+/* --------------------------------------------------------------------------
+ * Работа с листом объекта, который может лежать в архиве
+ * ------------------------------------------------------------------------ */
+
+/**
+ * Выполнение функции в контексте таблицы, где реально лежит лист объекта.
+ *
+ * Закрытые объекты уезжают в таблицу-архив за год («Архив 2026»), поэтому
+ * обычный `readBlock_` их уже не найдёт: он смотрит в основную таблицу.
+ * Здесь мы на время подменяем кэш открытой таблицы, выполняем чтение/запись
+ * и возвращаем всё как было — даже если внутри произошла ошибка.
+ *
+ * @param {Object} object — строка листа «Объекты»
+ * @param {Function} fn — что выполнить в контексте листа объекта
+ * @return {*} результат fn
+ */
+function withObjectSheet_(object, fn) {
+  const ref = str_(object && object['архив']);
+  if (!ref) return fn();
+
+  const archive = openArchiveSpreadsheet_(ref);
+  // Архив недоступен (файл переименован/удалён) — работаем с основной таблицей,
+  // чтобы чтение не падало целиком.
+  if (!archive) return fn();
+
+  const previous = SS_CACHE_;
+  try {
+    SS_CACHE_ = archive;
+    return fn();
+  } finally {
+    SS_CACHE_ = previous;
+  }
 }

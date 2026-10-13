@@ -104,13 +104,16 @@ function estimateParamsOf_(object) {
 
 /**
  * Чтение расчёта объекта из его листа.
+ * Учитывает, что лист закрытого объекта может лежать в таблице-архиве.
  * @param {Object} object — строка листа «Объекты»
  * @return {Object} полный расчёт
  */
 function getEstimateOf_(object) {
   const sheetName = str_(object['лист']);
   const rows = sheetName
-    ? readBlock_(sheetName, CONFIG.OBJECT_BLOCKS.CALC).map(function (row) {
+    ? withObjectSheet_(object, function () {
+      return readBlock_(sheetName, CONFIG.OBJECT_BLOCKS.CALC);
+    }).map(function (row) {
       return {
         id: str_(row['id']),
         section: str_(row['раздел']),
@@ -153,8 +156,11 @@ function writeEstimate_(object, estimate) {
     };
   });
 
-  replaceBlock_(sheetName, CONFIG.OBJECT_BLOCKS.CALC, header, rows);
+  withObjectSheet_(object, function () {
+    replaceBlock_(sheetName, CONFIG.OBJECT_BLOCKS.CALC, header, rows);
+  });
 
+  // Итоги пишем в реестр объектов основной таблицы — не в архив.
   updateRow_(CONFIG.SHEETS.OBJECTS, object._row, {
     'коэф общий': estimate.coefficient,
     'материал': estimate.materialCost,
@@ -165,6 +171,7 @@ function writeEstimate_(object, estimate) {
     'снабжение': estimate.supply,
     'пусконаладка': estimate.commissioning,
     'итог расчёта': estimate.total,
+    'позиции': estimate.positions,
     'обновлён': nowIso_()
   });
 }
@@ -237,7 +244,11 @@ function calcSave_(token, id, payload) {
 function objectTotalsOf_(object) {
   const estimate = getEstimateOf_(object);
   const sheetName = str_(object['лист']);
-  const purchases = sheetName ? readBlock_(sheetName, CONFIG.OBJECT_BLOCKS.PURCHASE) : [];
+  const purchases = sheetName
+    ? withObjectSheet_(object, function () {
+      return readBlock_(sheetName, CONFIG.OBJECT_BLOCKS.PURCHASE);
+    })
+    : [];
   const purchasesSum = round2_(purchases.reduce(function (acc, row) {
     return acc + num_(row['сумма'], 0);
   }, 0));

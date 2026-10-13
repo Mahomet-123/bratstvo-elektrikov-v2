@@ -19,16 +19,39 @@ const API_URL =
   'https://script.google.com/macros/s/AKfycbxyAah88qWJJvNzNL8sjGdwixn_stixWCX8vJkq7qy_2PhpooTASp2j-7W46HIBJXc-/exec';
 
 /**
- * Запрос к API.
+ * Запрос с повтором при сетевом сбое.
+ * Google периодически обрывает соединение на длинных прогонах —
+ * без повторов сквозная проверка падает на ровном месте.
+ * @param {string} url
+ * @param {Object} options
+ * @param {number=} attempts
+ * @return {Promise<Response>}
+ */
+async function fetchRetry(url, options, attempts) {
+  const total = attempts || 3;
+  let lastError = null;
+  for (let i = 0; i < total; i++) {
+    try {
+      return await fetch(url, options);
+    } catch (err) {
+      lastError = err;
+      if (i < total - 1) await new Promise((r) => setTimeout(r, 1200 * (i + 1)));
+    }
+  }
+  throw lastError;
+}
+
+/**
+ * Один запрос к API без повторов.
  * @param {string} action
  * @param {Object} payload
  * @param {string} token
  * @return {Promise<Object>}
  */
-async function callApi(action, payload, token) {
+async function callApiOnce(action, payload, token) {
   const body = JSON.stringify({ action, token: token || '', payload: payload || {} });
 
-  const first = await fetch(API_URL, {
+  const first = await fetchRetry(API_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'text/plain;charset=utf-8' },
     body,
@@ -47,9 +70,35 @@ async function callApi(action, payload, token) {
     return { ok: false, error: 'Нет адреса перенаправления (HTTP ' + first.status + ')', raw: text.slice(0, 300) };
   }
 
-  const second = await fetch(location, { method: 'GET', redirect: 'follow' });
+  const second = await fetchRetry(location, { method: 'GET', redirect: 'follow' });
   const text = await second.text();
   return safeJson(text);
+}
+
+/**
+ * Запрос к API с повтором.
+ * Помимо сетевых обрывов повторяем случай, когда Google отдал не JSON:
+ * на длинных прогонах это случается и не связано с логикой приложения.
+ * @param {string} action
+ * @param {Object} payload
+ * @param {string} token
+ * @param {number=} attempts
+ * @return {Promise<Object>}
+ */
+async function callApi(action, payload, token, attempts) {
+  const total = attempts || 3;
+  let last = null;
+
+  for (let i = 0; i < total; i++) {
+    try {
+      last = await callApiOnce(action, payload, token);
+      if (!last || last.raw === undefined) return last;
+    } catch (err) {
+      last = { ok: false, error: err.message };
+    }
+    if (i < total - 1) await new Promise((r) => setTimeout(r, 1200 * (i + 1)));
+  }
+  return last;
 }
 
 /** Разбор JSON с запасным вариантом. */
@@ -61,7 +110,18 @@ function safeJson(text) {
   }
 }
 
-module.exports = { callApi, API_URL };
+/**
+ * Загрузка самостоятельной HTML-страницы приложения (кабинет клиента, отчёт).
+ * Идёт по GET и не требует токена сессии — только токен объекта.
+ * @param {string} url
+ * @return {Promise<{status: number, text: string}>}
+ */
+async function fetchPage(url) {
+  const res = await fetch(url, { method: 'GET', redirect: 'follow' });
+  return { status: res.status, text: await res.text() };
+}
+
+module.exports = { callApi, fetchPage, API_URL };
 
 /* --- Запуск из командной строки --- */
 if (require.main === module) {

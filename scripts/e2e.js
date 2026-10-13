@@ -5,18 +5,21 @@
  *
  * Прогоняет полный сценарий: вход → миграция схемы → создание объекта →
  * расчёт с коэффициентами, наценками и скидкой → журнал дней с проверкой
- * дублей → чтение карточки → смена статуса → уборка тестового объекта.
+ * дублей → чтение карточки → закупки → загрузка фото накладной → кабинет
+ * клиента → PDF-отчёт → аналитика → закрытие объекта в архив и возврат →
+ * уведомления Telegram → уборка тестового объекта.
  *
  * Запуск: npm run e2e
  * ============================================================================
  */
 
-const { callApi } = require('./api.js');
+const { callApi, fetchPage } = require('./api.js');
 
 const results = [];
 let leaderToken = '';
 let masterToken = '';
 let testObjectId = '';
+let photoFileId = '';
 
 /** Проверка утверждения с записью в отчёт. */
 function check(title, condition, details) {
@@ -30,6 +33,25 @@ function eq(actual, expected, title) {
   const a = Math.round(Number(actual) * 100) / 100;
   const e = Math.round(Number(expected) * 100) / 100;
   return check(title, a === e, 'получено ' + a + ', ожидалось ' + e);
+}
+
+/**
+ * Безопасное чтение вложенного поля ответа.
+ * Ответ может не содержать данных (например, при ошибке), и проверка
+ * не должна падать раньше, чем покажет причину.
+ * @param {Object} res
+ * @param {string} path — путь через точку, например 'data.object.status'
+ * @param {*} fallback
+ * @return {*}
+ */
+function val(res, path, fallback) {
+  let current = res;
+  const parts = String(path).split('.');
+  for (let i = 0; i < parts.length; i++) {
+    if (current === null || current === undefined) return fallback;
+    current = current[parts[i]];
+  }
+  return current === undefined || current === null ? fallback : current;
 }
 
 async function main() {
@@ -52,10 +74,11 @@ async function main() {
 
   // Мастер для проверки прав.
   const users = await callApi('users.list', {}, leaderToken);
-  check('список бригады получен', users.ok === true && users.data.masters.length === 50,
-    users.ok ? users.data.masters.length + ' мастеров' : users.error);
+  const masters = val(users, 'data.masters', []);
+  check('список бригады получен: 50 мастеров', masters.length === 50,
+    masters.length ? masters.length + ' мастеров' : JSON.stringify(users).slice(0, 200));
 
-  const firstMaster = users.ok ? users.data.masters[0] : null;
+  const firstMaster = masters[0] || null;
   if (firstMaster) {
     const masterLogin = await callApi('auth.login', { name: firstMaster.name, code: firstMaster.code });
     check('вход мастера', masterLogin.ok === true, firstMaster.name + ' / ' + firstMaster.code);
@@ -74,15 +97,16 @@ async function main() {
 
   console.log('\n=== 4. Прайс ===');
   const prices = await callApi('prices.list');
-  check('прайс загружен', prices.ok === true);
-  check('204 позиции', prices.ok && prices.data.total === 204, prices.ok ? String(prices.data.total) : '');
-  check('8 разделов', prices.ok && prices.data.sections.length === 8,
-    prices.ok ? prices.data.sections.map((s) => s.name).join(' | ') : '');
-  check('есть раздел «Умный дом и IoT»', prices.ok &&
-    prices.data.sections.some((s) => s.name === 'Умный дом и IoT'));
-  check('коэффициенты: 6', prices.ok && prices.data.coefficients.length === 6);
-  check('наценки: 10% и 30%', prices.ok && prices.data.percents.length === 2 &&
-    prices.data.percents[0].value === 10 && prices.data.percents[1].value === 30);
+  check('прайс загружен', prices.ok === true, prices.ok ? '' : prices.error);
+  check('204 позиции', val(prices, 'data.total', 0) === 204, 'позиций: ' + val(prices, 'data.total', '—'));
+  check('8 разделов', (val(prices, 'data.sections', []) || []).length === 8,
+    (val(prices, 'data.sections', []) || []).map((s) => s.name).join(' | '));
+  check('есть раздел «Умный дом и IoT»',
+    (val(prices, 'data.sections', []) || []).some((s) => s.name === 'Умный дом и IoT'));
+  check('коэффициенты: 6', (val(prices, 'data.coefficients', []) || []).length === 6);
+  const percents = val(prices, 'data.percents', []) || [];
+  check('наценки: 10% и 30%', percents.length === 2 &&
+    percents[0].value === 10 && percents[1].value === 30);
 
   console.log('\n=== 5. Создание объекта ===');
   const created = await callApi('objects.create', {
@@ -91,11 +115,14 @@ async function main() {
     address: 'г. Магас, ул. Проверочная, 1',
     phone: '+7 900 000-00-00'
   }, leaderToken);
-  check('объект создан', created.ok === true, created.ok ? 'лист «' + created.data.object.sheet + '»' : created.error);
-  if (!created.ok) return finish();
-  testObjectId = created.data.object.id;
-  check('номер присвоен', /^\d{3}$/.test(created.data.object.numberLabel), created.data.object.numberLabel);
-  check('статус по умолчанию «расчёт»', created.data.object.status === 'расчёт');
+  const createdSheet = val(created, 'data.object.sheet', '');
+  check('объект создан', created.ok === true && !!createdSheet,
+    createdSheet ? 'лист «' + createdSheet + '»' : (created.error || JSON.stringify(created).slice(0, 200)));
+  if (!created.ok || !createdSheet) return finish();
+  testObjectId = val(created, 'data.object.id', '');
+  check('номер присвоен', /^\d{3}$/.test(val(created, 'data.object.numberLabel', '')),
+    val(created, 'data.object.numberLabel', '—'));
+  check('статус по умолчанию «расчёт»', val(created, 'data.object.status', '') === 'расчёт');
 
   console.log('\n=== 6. Расчёт ===');
   const calc = await callApi('calc.save', {
@@ -182,37 +209,252 @@ async function main() {
   console.log('\n=== 8. Карточка объекта ===');
   const card = await callApi('objects.get', { id: testObjectId }, leaderToken);
   check('карточка получена', card.ok === true, card.ok ? '' : card.error);
-  if (card.ok) {
-    check('записей дня: 3', card.data.days.length === 3, String(card.data.days.length));
-    eq(card.data.object.totals.hours, 14.5, 'часов всего: 7,5 + 3 + 4');
-    eq(card.data.object.totals.estimate, 19237.5, 'итог расчёта в карточке');
-    check('в карточке есть отметка дубля', card.data.days.some((d) => d.duplicate === true));
-  }
+  const cardDays = val(card, 'data.days', []) || [];
+  check('записей дня: 3', cardDays.length === 3, String(cardDays.length));
+  eq(val(card, 'data.object.totals.hours', 0), 14.5, 'часов всего: 7,5 + 3 + 4');
+  eq(val(card, 'data.object.totals.estimate', 0), 19237.5, 'итог расчёта в карточке');
+  check('в карточке есть отметка дубля', cardDays.some((d) => d.duplicate === true));
 
   console.log('\n=== 9. Записи за сегодня (руководитель) ===');
   const today = await callApi('days.today', { date: '2026-10-13' }, leaderToken);
   check('сводка по дню получена', today.ok === true, today.ok ? '' : today.error);
-  if (today.ok) {
-    eq(today.data.hours, 10.5, 'часов за 13.10: 7,5 + 3');
-    check('записи видны', today.data.records.length >= 2, today.data.records.length + ' записей');
-  }
+  eq(val(today, 'data.hours', 0), 10.5, 'часов за 13.10: 7,5 + 3');
+  check('записи видны', (val(today, 'data.records', []) || []).length >= 2,
+    (val(today, 'data.records', []) || []).length + ' записей');
   const todayForbidden = await callApi('days.today', {}, masterToken);
   check('мастеру закрыта сводка по дню', todayForbidden.ok === false && todayForbidden.code === 'FORBIDDEN');
 
   console.log('\n=== 10. Смена статуса ===');
   const toWork = await callApi('objects.setStatus', { id: testObjectId, status: 'в работе' }, leaderToken);
-  check('статус «в работе» установлен', toWork.ok === true && toWork.data.object.status === 'в работе');
+  check('статус «в работе» установлен', toWork.ok === true &&
+    val(toWork, 'data.object.status', '') === 'в работе', toWork.ok ? '' : toWork.error);
   const sameStatus = await callApi('objects.setStatus', { id: testObjectId, status: 'в работе' }, leaderToken);
   check('повторный тот же статус отклонён', sameStatus.ok === false);
 
   const list = await callApi('objects.list', {}, leaderToken);
-  check('объект виден в списке', list.ok && list.data.objects.some((o) => o.id === testObjectId));
+  check('объект виден в списке',
+    (val(list, 'data.objects', []) || []).some((o) => o.id === testObjectId));
 
-  console.log('\n=== 11. Уборка тестового объекта ===');
+  console.log('\n=== 11. Закупки ===');
+  const buy1 = await callApi('purchases.add', {
+    id: testObjectId,
+    purchase: {
+      date: '2026-10-13',
+      material: 'Кабель ВВГнг 3×2,5',
+      qty: 100,
+      unit: 'м',
+      price: 95.5,
+      comment: 'Накладная № 4412'
+    }
+  }, leaderToken);
+  check('закупка добавлена', buy1.ok === true, buy1.ok ? '' : buy1.error);
+  eq(val(buy1, 'data.purchase.sum', 0), 9550, 'сумма закупки: 100 × 95,50 ₽');
+
+  const badBuy = await callApi('purchases.add', {
+    id: testObjectId,
+    purchase: { material: '', qty: 0, price: -1 }
+  }, leaderToken);
+  check('пустая закупка отклонена', badBuy.ok === false && badBuy.code === 'VALIDATION');
+
+  const buy2 = await callApi('purchases.add', {
+    id: testObjectId,
+    purchase: { date: '2026-10-14', material: 'Гофра ПВХ 20 мм', qty: 50, unit: 'м', price: 18 }
+  }, leaderToken);
+  check('вторая закупка добавлена', buy2.ok === true, buy2.ok ? '' : buy2.error);
+
+  const buyList = await callApi('purchases.list', { id: testObjectId }, leaderToken);
+  check('список закупок получен: 2 позиции', val(buyList, 'data.total', -1) === 2,
+    'позиций: ' + val(buyList, 'data.total', 'нет данных'));
+  eq(val(buyList, 'data.sum', 0), 10450, 'сумма закупок: 9550 + 900');
+
+  const cardAfterBuy = await callApi('objects.get', { id: testObjectId }, leaderToken);
+  eq(val(cardAfterBuy, 'data.object.totals.purchases', 0), 10450, 'итог закупок в карточке объекта');
+  eq(val(cardAfterBuy, 'data.object.totals.positions', 0), 2, 'позиций расчёта в реестре');
+
+  console.log('\n=== 12. Фото накладной ===');
+  // 1×1 пиксель PNG — минимально возможный корректный файл.
+  const TINY_PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+  const photo = await callApi('photos.upload', {
+    id: testObjectId,
+    name: 'Накладная № 4412',
+    mime: 'image/png',
+    data: 'data:image/png;base64,' + TINY_PNG
+  }, leaderToken);
+  check('фото загружено на Диск', photo.ok === true,
+    photo.ok ? val(photo, 'data.name', '') + ' (' + val(photo, 'data.size', 0) + ' Б)' : photo.error);
+  check('тип определён как PNG', val(photo, 'data.mime', '') === 'image/png',
+    'получено ' + val(photo, 'data.mime', '—'));
+  check('ссылка на файл получена', /^https:\/\/drive\.google\.com/.test(val(photo, 'data.url', '')));
+  photoFileId = val(photo, 'data.fileId', '');
+
+  const badPhoto = await callApi('photos.upload', { id: testObjectId, name: 'Пусто', data: '' }, leaderToken);
+  check('пустое фото отклонено', badPhoto.ok === false && badPhoto.code === 'VALIDATION');
+
+  if (photo.ok) {
+    const buyWithPhoto = await callApi('purchases.add', {
+      id: testObjectId,
+      purchase: {
+        date: '2026-10-14', material: 'Автомат 16А', qty: 4, unit: 'шт.', price: 320,
+        comment: 'Фото накладной', photo: val(photo, 'data.url', ''), photoId: val(photo, 'data.fileId', '')
+      }
+    }, leaderToken);
+    check('закупка с фото добавлена', buyWithPhoto.ok === true, buyWithPhoto.ok ? '' : buyWithPhoto.error);
+    check('фото привязано к закупке',
+      val(buyWithPhoto, 'data.purchase.photoId', '') === val(photo, 'data.fileId', ''));
+  }
+
+  console.log('\n=== 13. Кабинет клиента ===');
+  const cabLink = await callApi('cabinet.link', { id: testObjectId }, leaderToken);
+  const cabUrl = val(cabLink, 'data.url', '');
+  check('ссылка на кабинет выдана', /page=cabinet/.test(cabUrl),
+    cabUrl ? cabUrl.slice(0, 70) + '…' : cabLink.error);
+
+  if (cabUrl) {
+    const page = await fetchPage(cabUrl);
+    check('страница кабинета открывается без входа', page.status === 200);
+    check('в кабинете есть название объекта', page.text.indexOf('ПРОВЕРКА ПРИЛОЖЕНИЯ') !== -1);
+    check('в кабинете видна закупка', page.text.indexOf('Кабель ВВГнг') !== -1);
+    // HTML на странице отдаётся в экранированном виде, поэтому ищем не разметку,
+    // а идентификатор загруженного файла: он в ответе не меняется.
+    check('в кабинете видна накладная с фото',
+      !!photoFileId && page.text.indexOf(photoFileId) !== -1,
+      photoFileId ? '' : 'фото не загружалось');
+    check('в кабинете виден расчёт', page.text.indexOf('Расчёт стоимости работ') !== -1);
+
+    // Чужой токен не должен открывать кабинет.
+    const wrong = await fetchPage(cabUrl.replace(/token=[^&]+/, 'token=ZZZZZZZZZZ'));
+    check('неверный токен не открывает кабинет', wrong.text.indexOf('Ссылка недоступна') !== -1);
+  }
+
+  const cabRevoke = await callApi('cabinet.revoke', { id: testObjectId }, leaderToken);
+  check('кабинет закрыт', cabRevoke.ok === true && val(cabRevoke, 'data.enabled', true) === false,
+    cabRevoke.ok ? '' : cabRevoke.error);
+  if (cabUrl) {
+    const dead = await fetchPage(cabUrl);
+    check('после закрытия старая ссылка мертва', dead.text.indexOf('Ссылка недоступна') !== -1);
+  }
+  await callApi('cabinet.link', { id: testObjectId }, leaderToken);
+
+  console.log('\n=== 14. Отчёты ===');
+  const repLink = await callApi('report.link', { id: testObjectId }, leaderToken);
+  const repUrl = val(repLink, 'data.url', '');
+  check('ссылка на отчёт получена', /page=report/.test(repUrl), repUrl ? '' : repLink.error);
+  if (repUrl) {
+    const repPage = await fetchPage(repUrl);
+    check('страница отчёта открывается', repPage.status === 200);
+    check('в отчёте есть итог расчёта', repPage.text.indexOf('ИТОГО') !== -1);
+  }
+
+  const repPdf = await callApi('report.pdf', { id: testObjectId }, leaderToken);
+  check('PDF-отчёт собран на Диске', repPdf.ok === true && val(repPdf, 'data.size', 0) > 0,
+    repPdf.ok ? val(repPdf, 'data.name', '') + ' (' + Math.round(val(repPdf, 'data.size', 0) / 1024) + ' КБ)' : repPdf.error);
+  check('ссылка на PDF получена', /^https:\/\/drive\.google\.com/.test(val(repPdf, 'data.url', '')));
+
+  const repBad = await callApi('report.send', { id: testObjectId, contact: 'не-почта' }, leaderToken);
+  check('отправка без почты отклонена', repBad.ok === false && repBad.code === 'VALIDATION');
+
+  console.log('\n=== 15. Аналитика (руководитель) ===');
+  const summary = await callApi('analytics.summary', {}, leaderToken);
+  check('сводка по объектам получена', summary.ok === true, summary.ok ? '' : summary.error);
+  check('тестовый объект попал в сводку',
+    (val(summary, 'data.objects', []) || []).some((o) => o.id === testObjectId));
+  check('итоги посчитаны', val(summary, 'data.totals.objects', 0) >= 1,
+    'объектов: ' + val(summary, 'data.totals.objects', 0) +
+    ', смета: ' + val(summary, 'data.totals.estimate', 0) + ' ₽');
+
+  const daysStat = await callApi('analytics.days', { from: '2026-10-01', to: '2026-10-31' }, leaderToken);
+  check('сводка по дням получена', daysStat.ok === true, daysStat.ok ? '' : daysStat.error);
+  check('в сводке есть 13.10',
+    (val(daysStat, 'data.days', []) || []).some((d) => d.date === '2026-10-13'),
+    'дней в сводке: ' + (val(daysStat, 'data.days', []) || []).length);
+  check('исполнители посчитаны', (val(daysStat, 'data.byExecutor', []) || []).length >= 1);
+
+  const summaryForbidden = await callApi('analytics.summary', {}, masterToken);
+  check('мастеру закрыта аналитика', summaryForbidden.ok === false && summaryForbidden.code === 'FORBIDDEN');
+
+  console.log('\n=== 16. Закрытие объекта и архив ===');
+  const closed = await callApi('objects.close', { id: testObjectId }, leaderToken);
+  const archiveName = val(closed, 'data.archive.name', '');
+  check('объект закрыт и убран в архив', closed.ok === true && !!archiveName,
+    archiveName || closed.error || 'архив не указан');
+  check('лист перенесён в «Архив 2026»', archiveName === 'Архив 2026', archiveName || '—');
+
+  const cardArchived = await callApi('objects.get', { id: testObjectId }, leaderToken);
+  check('закрытый объект читается из архива', cardArchived.ok === true,
+    cardArchived.ok ? 'часов: ' + val(cardArchived, 'data.object.totals.hours', 0) : cardArchived.error);
+  eq(val(cardArchived, 'data.object.totals.hours', 0), 14.5, 'часы читаются из архивного листа');
+  check('закупки читаются из архива', (val(cardArchived, 'data.purchases', []) || []).length === 3,
+    'закупок: ' + (val(cardArchived, 'data.purchases', []) || []).length);
+  check('расчёт читается из архива', (val(cardArchived, 'data.estimate.rows', []) || []).length === 2);
+
+  const archives = await callApi('archive.list', {}, leaderToken);
+  check('список архивов получен', archives.ok === true, archives.ok ? '' : archives.error);
+  const yearArchive = (val(archives, 'data.archives', []) || []).filter((a) => a.name === 'Архив 2026')[0];
+  check('архив «Архив 2026» найден', !!yearArchive);
+  check('в архиве числится наш объект',
+    !!yearArchive && (yearArchive.objects || []).some((o) => o.id === testObjectId));
+  // Имя листа в архиве берём из карточки: Google может добавить «(копия)»,
+  // и приложение обязано записать фактическое имя, а не исходное.
+  check('лист объекта лежит в архиве',
+    !!yearArchive && (yearArchive.sheets || []).indexOf(val(cardArchived, 'data.object.sheet', '')) !== -1,
+    yearArchive ? 'листы: ' + (yearArchive.sheets || []).join(', ') : '');
+
+  const archivesForbidden = await callApi('archive.list', {}, masterToken);
+  check('мастеру закрыт список архивов', archivesForbidden.ok === false && archivesForbidden.code === 'FORBIDDEN');
+
+  const restored = await callApi('objects.restore', { id: testObjectId }, leaderToken);
+  check('объект возвращён в работу', restored.ok === true &&
+    val(restored, 'data.object.status', '') === 'в работе',
+    restored.ok ? val(restored, 'data.message', '') : restored.error);
+
+  const cardRestored = await callApi('objects.get', { id: testObjectId }, leaderToken);
+  check('после возврата объект снова читается',
+    cardRestored.ok === true && (val(cardRestored, 'data.days', []) || []).length === 3,
+    cardRestored.ok ? 'дней: ' + (val(cardRestored, 'data.days', []) || []).length : cardRestored.error);
+
+  console.log('\n=== 17. Уведомления в Telegram ===');
+  const botState = await callApi('bot.status', {}, leaderToken);
+  check('состояние уведомлений получено', botState.ok === true, botState.ok ? '' : botState.error);
+  check('бот ещё не настроен', val(botState, 'data.configured', true) === false);
+  check('час напоминания из настроек', val(botState, 'data.reminderHour', 0) === 20,
+    String(val(botState, 'data.reminderHour', '—')));
+
+  const botBad = await callApi('bot.saveToken', { botToken: 'заведомо-неверный-ключ' }, leaderToken);
+  check('неверный ключ бота отклонён', botBad.ok === false && botBad.code === 'VALIDATION');
+
+  const botEmpty = await callApi('bot.saveToken', {}, leaderToken);
+  check('пустые настройки бота отклонены', botEmpty.ok === false && botEmpty.code === 'VALIDATION');
+
+  const botTest = await callApi('bot.test', {}, leaderToken);
+  check('проверка отправки отвечает без падения', botTest.ok === true && val(botTest, 'data.ok', true) === false,
+    botTest.ok ? val(botTest, 'data.description', '') : botTest.error);
+
+  const botForbidden = await callApi('bot.status', {}, masterToken);
+  check('мастеру закрыты настройки уведомлений', botForbidden.ok === false && botForbidden.code === 'FORBIDDEN');
+
+  console.log('\n=== 18. Уборка тестового объекта ===');
   await callApi('objects.setStatus', { id: testObjectId, status: 'расчёт' }, leaderToken);
   const removed = await callApi('objects.remove', { id: testObjectId }, leaderToken);
-  check('тестовый объект убран', removed.ok === true, removed.ok ? removed.data.message : removed.error);
+  check('тестовый объект убран', removed.ok === true,
+    removed.ok ? val(removed, 'data.message', '') : removed.error);
   if (removed.ok) testObjectId = '';
+
+  // Уборка архива: тестовые листы в нём больше никому не нужны.
+  const archAfter = await callApi('archive.list', {}, leaderToken);
+  const yearAfter = (val(archAfter, 'data.archives', []) || []).filter((a) => a.name === 'Архив 2026')[0];
+  if (yearAfter) {
+    const cleaned = await callApi('archive.cleanup', { archiveId: yearAfter.id }, leaderToken);
+    check('уборка архива убирает лишние листы', cleaned.ok === true,
+      cleaned.ok ? val(cleaned, 'data.message', '') : cleaned.error);
+
+    const archFinal = await callApi('archive.list', {}, leaderToken);
+    const yearFinal = (val(archFinal, 'data.archives', []) || []).filter((a) => a.name === 'Архив 2026')[0];
+    check('в архиве не осталось мусорных листов',
+      !!yearFinal && (yearFinal.sheets || []).every((s) => s.indexOf('копия') === -1),
+      yearFinal ? 'листы: ' + (yearFinal.sheets || []).join(', ') : 'архив не найден');
+  }
+  const cleanupForbidden = await callApi('archive.cleanup', {}, masterToken);
+  check('мастеру закрыта уборка архива', cleanupForbidden.ok === false && cleanupForbidden.code === 'FORBIDDEN');
 
   finish();
 }

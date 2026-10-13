@@ -8,12 +8,19 @@
  * ============================================================================
  */
 
-// Порядок блоков при создании листа объекта.
-const OBJECT_BLOCK_ORDER_ = [
-  CONFIG.OBJECT_BLOCKS.CALC,
-  CONFIG.OBJECT_BLOCKS.DAY,
-  CONFIG.OBJECT_BLOCKS.PURCHASE
-];
+/**
+ * Порядок блоков при создании листа объекта.
+ * Собирается внутри функции, а не на верхнем уровне модуля: так код не зависит
+ * от того, в каком порядке Apps Script склеивает файлы проекта.
+ * @return {Array<string>}
+ */
+function objectBlockOrder_() {
+  return [
+    CONFIG.OBJECT_BLOCKS.CALC,
+    CONFIG.OBJECT_BLOCKS.DAY,
+    CONFIG.OBJECT_BLOCKS.PURCHASE
+  ];
+}
 
 /* --------------------------------------------------------------------------
  * Поиск и представление
@@ -54,7 +61,7 @@ function createObjectSheet_(sheetName) {
   let sh = ss.getSheetByName(sheetName);
   if (!sh) sh = ss.insertSheet(sheetName);
 
-  OBJECT_BLOCK_ORDER_.forEach(function (block) {
+  objectBlockOrder_().forEach(function (block) {
     ensureBlock_(sheetName, block, OBJECT_HEADERS[block]);
   });
 
@@ -123,7 +130,8 @@ function objectView_(object, withTotals) {
       equipmentCost: round2_(num_(object['оборудование'], 0)),
       estimate: round2_(num_(object['итог расчёта'], 0)),
       purchases: round2_(num_(object['итог закупок'], 0)),
-      hours: num_(object['часы'], 0)
+      hours: num_(object['часы'], 0),
+      positions: int_(object['позиции'], 0)
     }
   };
 
@@ -219,8 +227,16 @@ function getObjectCard_(token, id) {
   const sheetName = str_(object['лист']);
 
   const estimate = getEstimateOf_(object);
-  const days = sheetName ? readBlock_(sheetName, CONFIG.OBJECT_BLOCKS.DAY).map(dayView_) : [];
-  const purchases = sheetName ? readBlock_(sheetName, CONFIG.OBJECT_BLOCKS.PURCHASE).map(purchaseView_) : [];
+  const days = sheetName
+    ? withObjectSheet_(object, function () {
+      return readBlock_(sheetName, CONFIG.OBJECT_BLOCKS.DAY);
+    }).map(dayView_)
+    : [];
+  const purchases = sheetName
+    ? withObjectSheet_(object, function () {
+      return readBlock_(sheetName, CONFIG.OBJECT_BLOCKS.PURCHASE);
+    }).map(purchaseView_)
+    : [];
 
   const hours = round2_(days.reduce(function (acc, day) { return acc + num_(day.hours, 0); }, 0));
   const purchasesSum = round2_(purchases.reduce(function (acc, item) { return acc + num_(item.sum, 0); }, 0));
@@ -339,6 +355,7 @@ function createObject_(token, data) {
       'итог расчёта': 0,
       'итог закупок': 0,
       'часы': 0,
+      'позиции': 0,
       'создан': stamp,
       'обновлён': stamp,
       'закрыт': '',
@@ -423,7 +440,9 @@ function setObjectStatus_(token, id, status) {
 function recalcHours_(object) {
   const sheetName = str_(object['лист']);
   if (!sheetName) return 0;
-  const days = readBlock_(sheetName, CONFIG.OBJECT_BLOCKS.DAY);
+  const days = withObjectSheet_(object, function () {
+    return readBlock_(sheetName, CONFIG.OBJECT_BLOCKS.DAY);
+  });
   const hours = round2_(days.reduce(function (acc, row) {
     return acc + num_(row['часы'], 0);
   }, 0));
@@ -439,7 +458,9 @@ function recalcHours_(object) {
 function recalcPurchases_(object) {
   const sheetName = str_(object['лист']);
   if (!sheetName) return 0;
-  const items = readBlock_(sheetName, CONFIG.OBJECT_BLOCKS.PURCHASE);
+  const items = withObjectSheet_(object, function () {
+    return readBlock_(sheetName, CONFIG.OBJECT_BLOCKS.PURCHASE);
+  });
   const sum = round2_(items.reduce(function (acc, row) {
     return acc + num_(row['сумма'], 0);
   }, 0));
@@ -465,20 +486,33 @@ function removeObject_(token, id) {
     'Убрать можно только объект в статусе «расчёт». Сначала закройте работы.', 'VALIDATION');
 
   const sheetName = str_(object['лист']);
-  assert_(sheetName, 'У объекта не задан лист.', 'NOT_FOUND');
 
   return withLock_(function () {
-    const trash = trashSpreadsheet_();
-    const movedTo = moveSheetTo_(sheetName, trash);
+    // Лист может отсутствовать: объект уже уезжал в архив, или лист убрали
+    // вручную. В таком случае убираем только запись из реестра — это лучше,
+    // чем оставлять объект, который невозможно открыть.
+    const sheet = sheetName ? sheetByName_(sheetName) : null;
+    let movedTo = '';
+    let trashName = '';
+
+    if (sheet) {
+      const trash = trashSpreadsheet_();
+      trashName = trash.getName();
+      movedTo = moveSheetTo_(sheetName, trash);
+    }
+
     deleteRow_(CONFIG.SHEETS.OBJECTS, object._row);
 
-    logVisit_(leader.name, leader.role, 'убрал объект ' + view.title + ' (лист в корзине)', {});
+    logVisit_(leader.name, leader.role,
+      'убрал объект ' + view.title + (movedTo ? ' (лист в корзине)' : ' (лист не найден)'), {});
 
     return {
       ok: true,
       movedTo: movedTo,
-      trash: trash.getName(),
-      message: 'Объект убран из приложения. Его лист сохранён в таблице «' + trash.getName() + '» на Диске.'
+      trash: trashName,
+      message: movedTo
+        ? 'Объект убран из приложения. Его лист сохранён в таблице «' + trashName + '» на Диске.'
+        : 'Объект убран из приложения. Листа объекта в таблице не было — сохранять было нечего.'
     };
   });
 }

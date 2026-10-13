@@ -2,7 +2,8 @@
   "scriptId": "1BY6VwU9x8kdKY40xdcHXQq1ggIjHg-p3rFbdkOB3u7Snk7bBon29sKOG",
   "rootDir": "backend",
   "filePushOrder": [
-    "backend/Config.gs",
-    "backend/Utils.gs"
+    "Config.gs",
+    "Utils.gs",
+    "Sheets.gs"
   ]
 }

@@ -3,7 +3,9 @@
  * Модуль: Router
  * Ответственность: таблица маршрутов API, разбор запроса, проверка прав,
  *                  единая обработка ошибок. Все обработчики — тонкие: логика в модулях.
- * Зависимости: Config, Utils, Sessions, Users, Prices, Visits, Statuses
+ * Зависимости: Config, Utils, Sessions, Users, Prices, Visits, Statuses,
+ *              Objects, Calc, Records, Purchases, Photos, Archive, Cabinet,
+ *              Report, Analytics, Bot, Pages
  * ============================================================================
  */
 
@@ -274,6 +276,182 @@ const ROUTES_ = {
     handler: function (ctx) {
       return todayRecords_(ctx.token, (ctx.payload || {}).date);
     }
+  },
+
+  /* --- Закупки --- */
+
+  'purchases.list': {
+    auth: 'user',
+    handler: function (ctx) {
+      return purchasesList_(ctx.token, (ctx.payload || {}).id);
+    }
+  },
+
+  'purchases.add': {
+    auth: 'user',
+    handler: function (ctx) {
+      const p = ctx.payload || {};
+      return addPurchase_(ctx.token, p.id, p.purchase || {});
+    }
+  },
+
+  'purchases.remove': {
+    auth: 'user',
+    handler: function (ctx) {
+      const p = ctx.payload || {};
+      return removePurchase_(ctx.token, p.id, p.rowId);
+    }
+  },
+
+  /* --- Фотографии накладных --- */
+
+  'photos.upload': {
+    auth: 'user',
+    handler: function (ctx) {
+      return photoUpload_(ctx.token, ctx.payload || {});
+    }
+  },
+
+  /* --- Закрытие и архив --- */
+
+  'objects.close': {
+    auth: 'user',
+    handler: function (ctx) {
+      return closeObject_(ctx.token, (ctx.payload || {}).id);
+    }
+  },
+
+  'objects.restore': {
+    auth: 'user',
+    handler: function (ctx) {
+      return restoreObject_(ctx.token, (ctx.payload || {}).id);
+    }
+  },
+
+  'archive.list': {
+    auth: 'leader',
+    handler: function (ctx) {
+      return archivesList_(ctx.token);
+    }
+  },
+
+  'archive.cleanup': {
+    auth: 'leader',
+    handler: function (ctx) {
+      return archiveCleanup_(ctx.token, (ctx.payload || {}).archiveId);
+    }
+  },
+
+  /* --- Кабинет клиента --- */
+
+  'cabinet.link': {
+    auth: 'user',
+    handler: function (ctx) {
+      return cabinetLink_(ctx.token, (ctx.payload || {}).id);
+    }
+  },
+
+  'cabinet.revoke': {
+    auth: 'user',
+    handler: function (ctx) {
+      return cabinetRevoke_(ctx.token, (ctx.payload || {}).id);
+    }
+  },
+
+  'cabinet.expire': {
+    auth: 'leader',
+    handler: function (ctx) {
+      requireLeader_(ctx.token);
+      return cabinetExpire_();
+    }
+  },
+
+  /* --- Отчёты --- */
+
+  'report.link': {
+    auth: 'user',
+    handler: function (ctx) {
+      const p = ctx.payload || {};
+      return reportLink_(ctx.token, p.id);
+    }
+  },
+
+  'report.pdf': {
+    auth: 'user',
+    handler: function (ctx) {
+      requireSession_(ctx.token);
+      const object = requireObject_((ctx.payload || {}).id);
+      return buildReportPdf_(object);
+    }
+  },
+
+  'report.send': {
+    auth: 'user',
+    handler: function (ctx) {
+      const p = ctx.payload || {};
+      return reportSend_(ctx.token, p.id, p.contact);
+    }
+  },
+
+  /* --- Аналитика (руководитель) --- */
+
+  'analytics.summary': {
+    auth: 'leader',
+    handler: function (ctx) {
+      return analyticsSummary_(ctx.token, ctx.payload || {});
+    }
+  },
+
+  'analytics.days': {
+    auth: 'leader',
+    handler: function (ctx) {
+      return analyticsDays_(ctx.token, ctx.payload || {});
+    }
+  },
+
+  /* --- Уведомления в Telegram --- */
+
+  'bot.status': {
+    auth: 'leader',
+    handler: function (ctx) {
+      return botStatus_(ctx.token);
+    }
+  },
+
+  'bot.saveToken': {
+    auth: 'leader',
+    handler: function (ctx) {
+      return botSaveToken_(ctx.token, ctx.payload || {});
+    }
+  },
+
+  'bot.test': {
+    auth: 'leader',
+    handler: function (ctx) {
+      return botTest_(ctx.token);
+    }
+  },
+
+  'bot.install': {
+    auth: 'leader',
+    handler: function (ctx) {
+      return botInstallTriggers_(ctx.token);
+    }
+  },
+
+  'bot.remove': {
+    auth: 'leader',
+    handler: function (ctx) {
+      return botRemoveTriggers_();
+    }
+  },
+
+  'bot.remind': {
+    auth: 'leader',
+    handler: function (ctx) {
+      requireLeader_(ctx.token);
+      return botRemind_((ctx.payload || {}).date);
+    }
   }
 };
 
@@ -347,7 +525,15 @@ function handleRequest_(e) {
 function healthReport_() {
   const ss = ss_();
   const existing = {};
-  ss.getSheets().forEach(function (sh) { existing[sh.getName()] = sh.getLastRow(); });
+  const headers = {};
+  ss.getSheets().forEach(function (sh) {
+    existing[sh.getName()] = sh.getLastRow();
+    // Шапку показываем только у реестров: она нужна при разборе расхождений
+    // между схемой и таблицей.
+    if (SCHEMA[sh.getName()] && sh.getLastRow() > 0 && sh.getLastColumn() > 0) {
+      headers[sh.getName()] = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0].map(str_);
+    }
+  });
 
   const expected = [
     CONFIG.SHEETS.PRICES,
@@ -366,6 +552,7 @@ function healthReport_() {
     time: nowIso_(),
     spreadsheet: ss.getName(),
     sheets: existing,
+    headers: headers,
     missingSheets: missing,
     initialized: missing.length === 0,
     users: readRows_(CONFIG.SHEETS.USERS).length,

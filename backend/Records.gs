@@ -19,7 +19,9 @@ function daysList_(token, id) {
   const object = requireObject_(id);
   const sheetName = str_(object['лист']);
   const days = sheetName
-    ? readBlock_(sheetName, CONFIG.OBJECT_BLOCKS.DAY).map(dayView_)
+    ? withObjectSheet_(object, function () {
+      return readBlock_(sheetName, CONFIG.OBJECT_BLOCKS.DAY);
+    }).map(dayView_)
     : [];
 
   days.sort(function (a, b) {
@@ -56,7 +58,9 @@ function addDay_(token, id, day) {
 
   return withLock_(function () {
     // Поиск возможного дубля: та же дата и тот же исполнитель.
-    const existing = readBlock_(sheetName, CONFIG.OBJECT_BLOCKS.DAY);
+    const existing = withObjectSheet_(object, function () {
+      return readBlock_(sheetName, CONFIG.OBJECT_BLOCKS.DAY);
+    });
     const duplicate = existing.some(function (row) {
       return isoDate_(row['дата']) === date &&
         str_(row['исполнитель']).toLowerCase() === executor.toLowerCase();
@@ -72,7 +76,9 @@ function addDay_(token, id, day) {
       'создано': nowIso_()
     };
 
-    appendBlockRow_(sheetName, CONFIG.OBJECT_BLOCKS.DAY, OBJECT_HEADERS[CONFIG.OBJECT_BLOCKS.DAY], record);
+    withObjectSheet_(object, function () {
+      appendBlockRow_(sheetName, CONFIG.OBJECT_BLOCKS.DAY, OBJECT_HEADERS[CONFIG.OBJECT_BLOCKS.DAY], record);
+    });
     recalcHours_(object);
 
     logVisit_(session.name, session.role,
@@ -106,11 +112,15 @@ function daysRemove_(token, id, rowId) {
   assert_(key, 'Не указана запись.', 'VALIDATION');
 
   return withLock_(function () {
-    const rows = readBlock_(sheetName, CONFIG.OBJECT_BLOCKS.DAY);
+    const rows = withObjectSheet_(object, function () {
+      return readBlock_(sheetName, CONFIG.OBJECT_BLOCKS.DAY);
+    });
     const target = rows.filter(function (row) { return str_(row['id']) === key; })[0];
     assert_(target, 'Запись не найдена.', 'NOT_FOUND');
 
-    deleteBlockRow_(sheetName, target._row);
+    withObjectSheet_(object, function () {
+      deleteBlockRow_(sheetName, target._row);
+    });
     recalcHours_(object);
 
     logVisit_(session.name, session.role, 'удалил запись дня по объекту ' + objectView_(object).title, {});
@@ -126,6 +136,16 @@ function daysRemove_(token, id, rowId) {
  */
 function todayRecords_(token, date) {
   requireLeader_(token);
+  return recordsOfDate_(date);
+}
+
+/**
+ * Сводка записей журнала за конкретный день по всем объектам.
+ * Без проверки прав: используется и в панели руководителя, и в напоминаниях.
+ * @param {string=} date
+ * @return {Object}
+ */
+function recordsOfDate_(date) {
   const target = isoDate_(date) || todayIso_();
   const objects = readRows_(CONFIG.SHEETS.OBJECTS);
   const records = [];
@@ -133,7 +153,10 @@ function todayRecords_(token, date) {
   objects.forEach(function (object) {
     const sheetName = str_(object['лист']);
     if (!sheetName) return;
-    readBlock_(sheetName, CONFIG.OBJECT_BLOCKS.DAY).forEach(function (row) {
+    const rows = withObjectSheet_(object, function () {
+      return readBlock_(sheetName, CONFIG.OBJECT_BLOCKS.DAY);
+    });
+    rows.forEach(function (row) {
       const day = dayView_(row);
       if (day.date !== target) return;
       records.push({

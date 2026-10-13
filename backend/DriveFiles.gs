@@ -138,29 +138,41 @@ function trashFile_(fileId) {
 }
 
 /**
+ * Таблица в папке архивов: найти по имени или создать.
+ *
+ * Важная деталь: после `SpreadsheetApp.create` файл нужно открыть заново.
+ * Ссылка, полученная сразу после создания, в Apps Script ненадёжна — запись
+ * через неё может потеряться. Поэтому всегда возвращаем свежий объект.
+ *
+ * @param {string} name
+ * @param {Folder=} folder — куда положить созданный файл
+ * @return {Spreadsheet}
+ */
+function ensureSpreadsheetInFolder_(name, folder) {
+  const target = folder || archiveFolder_();
+  const existing = target.getFilesByName(name);
+  if (existing.hasNext()) return SpreadsheetApp.openById(existing.next().getId());
+
+  const createdId = SpreadsheetApp.create(name).getId();
+  const file = fileById_(createdId);
+  if (file) {
+    target.addFile(file);
+    try {
+      DriveApp.getRootFolder().removeFile(file);
+    } catch (e) {
+      // Файл может быть уже не в корне — это не ошибка.
+    }
+  }
+  return SpreadsheetApp.openById(createdId);
+}
+
+/**
  * Таблица-архив за год: «Архив 2026». Создаётся при первом закрытии объекта.
  * @param {number} year
  * @return {Spreadsheet}
  */
 function archiveSpreadsheet_(year) {
-  const name = CONFIG.ARCHIVE_PREFIX + ' ' + int_(year, currentYear_());
-  const folder = archiveFolder_();
-  const it = folder.getFilesByName(name);
-  if (it.hasNext()) {
-    return SpreadsheetApp.openById(it.next().getId());
-  }
-  const created = SpreadsheetApp.create(name);
-  // Переносим созданный файл из корня в папку архивов.
-  const file = fileById_(created.getId());
-  if (file) {
-    folder.addFile(file);
-    try {
-      DriveApp.getRootFolder().removeFile(file);
-    } catch (e) {
-      // Не критично.
-    }
-  }
-  return created;
+  return ensureSpreadsheetInFolder_(CONFIG.ARCHIVE_PREFIX + ' ' + int_(year, currentYear_()));
 }
 
 /**
@@ -169,23 +181,54 @@ function archiveSpreadsheet_(year) {
  * @return {Spreadsheet}
  */
 function trashSpreadsheet_() {
-  const name = CONFIG.TRASH_SPREADSHEET;
-  const folder = archiveFolder_();
-  const it = folder.getFilesByName(name);
-  if (it.hasNext()) {
-    return SpreadsheetApp.openById(it.next().getId());
+  return ensureSpreadsheetInFolder_(CONFIG.TRASH_SPREADSHEET);
+}
+
+/**
+ * Открыть файл для просмотра по ссылке.
+ * Нужно для фото накладных: кабинет клиента открывается без входа в Google,
+ * поэтому картинка должна быть доступна любому, у кого есть ссылка.
+ * @param {string} fileId
+ * @return {boolean}
+ */
+function makeFileViewable_(fileId) {
+  const file = fileById_(fileId);
+  if (!file) return false;
+  try {
+    file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+    return true;
+  } catch (e) {
+    // Организация может запрещать публикацию — фото просто останется приватным.
+    logError_('DriveFiles.makeFileViewable_', e, { fileId: str_(fileId) });
+    return false;
   }
-  const created = SpreadsheetApp.create(name);
-  const file = fileById_(created.getId());
-  if (file) {
-    folder.addFile(file);
-    try {
-      DriveApp.getRootFolder().removeFile(file);
-    } catch (e) {
-      // Не критично.
-    }
+}
+
+/**
+ * Открытие таблицы-архива по ссылке из реестра объектов.
+ * В колонке «архив» хранится идентификатор файла — он не меняется при
+ * переименовании. Если файла по id нет, пробуем найти его по имени в папке
+ * архивов: так восстанавливается доступ, если таблицу пересоздали.
+ * @param {string} ref — идентификатор или имя таблицы-архива
+ * @return {Spreadsheet|null}
+ */
+function openArchiveSpreadsheet_(ref) {
+  const key = str_(ref);
+  if (!key) return null;
+
+  try {
+    return SpreadsheetApp.openById(key);
+  } catch (e) {
+    // Не идентификатор — ищем по имени.
   }
-  return created;
+
+  try {
+    const it = archiveFolder_().getFilesByName(key);
+    if (it.hasNext()) return SpreadsheetApp.openById(it.next().getId());
+  } catch (e) {
+    // Файл недоступен.
+  }
+  return null;
 }
 
 /**

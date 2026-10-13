@@ -56,15 +56,18 @@ function setupInit_() {
     // 1. Листы-реестры по схеме из Config.
     const created = [];
     const updated = [];
+    const extended = [];
     Object.keys(SCHEMA).forEach(function (name) {
       const existed = !!sheetByName_(name);
       const result = ensureSchema_(name);
       if (!existed && result === 'создан') created.push(name);
       if (result === 'обновлена') updated.push(name);
+      if (result === 'дополнена') extended.push(name);
     });
     report.steps.push({
       'листы созданы': created,
       'шапки обновлены': updated,
+      'шапки дополнены новыми колонками': extended,
       'всего листов в схеме': Object.keys(SCHEMA).length
     });
 

@@ -110,6 +110,42 @@ function checkImports() {
   return problems;
 }
 
+/**
+ * Проверка, что все служебные функции бэкенда определены.
+ * Apps Script склеивает файлы в один общий контекст, поэтому вызов
+ * несуществующей функции вроде `withObjectSheet_()` не ловится ни
+ * редактором, ни сборкой — падение происходит только в бою.
+ * Здесь собираем все объявления `function имя_()` и константы по всем
+ * `.gs` и ищем вызовы вида `имя_(`, которых нет нигде.
+ */
+function checkBackendSymbols() {
+  const files = collect(path.join(ROOT, 'backend'), '.gs');
+  const defined = new Set();
+  const sources = new Map();
+
+  for (const file of files) {
+    const src = fs.readFileSync(file, 'utf8');
+    sources.set(file, src);
+    for (const m of src.matchAll(/^\s*function\s+([A-Za-z0-9_$]+)/gm)) defined.add(m[1]);
+    for (const m of src.matchAll(/^\s*(?:const|let|var)\s+([A-Za-z0-9_$]+)/gm)) defined.add(m[1]);
+  }
+
+  const problems = [];
+  for (const [file, src] of sources) {
+    const rel = path.relative(ROOT, file).replace(/\\/g, '/');
+    const re = /(?<![A-Za-z0-9_.$])([A-Za-z0-9_$]+_)\s*\(/g;
+    const seen = new Set();
+    let m;
+    while ((m = re.exec(src))) {
+      const name = m[1];
+      if (defined.has(name) || seen.has(name)) continue;
+      seen.add(name);
+      problems.push(rel + ' → нет определения функции «' + name + '()»');
+    }
+  }
+  return problems;
+}
+
 const targets = []
   .concat(collect(path.join(ROOT, 'backend'), '.gs').map((f) => ({ f, ext: '.cjs' })))
   .concat(collect(path.join(ROOT, 'public', 'js'), '.js').map((f) => ({ f, ext: '.mjs' })))
@@ -138,10 +174,18 @@ if (importProblems.length) {
   importProblems.forEach((line) => console.log('  ОШИБКА ' + line));
 }
 
-console.log('\nПроверено файлов: ' + targets.length + ', ошибок: ' + failures.length +
-  ', проблем с импортами: ' + importProblems.length);
+// Третий проход: все ли служебные функции бэкенда объявлены.
+const symbolProblems = checkBackendSymbols();
+if (symbolProblems.length) {
+  console.log('\nСлужебные функции бэкенда:');
+  symbolProblems.forEach((line) => console.log('  ОШИБКА ' + line));
+}
 
-if (failures.length || importProblems.length) {
+console.log('\nПроверено файлов: ' + targets.length + ', ошибок: ' + failures.length +
+  ', проблем с импортами: ' + importProblems.length +
+  ', необъявленных функций: ' + symbolProblems.length);
+
+if (failures.length || importProblems.length || symbolProblems.length) {
   if (failures.length) console.error('\nНе прошли проверку:\n  ' + failures.join('\n  '));
   process.exit(1);
 }
