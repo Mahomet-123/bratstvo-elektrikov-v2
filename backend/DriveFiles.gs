@@ -164,6 +164,31 @@ function archiveSpreadsheet_(year) {
 }
 
 /**
+ * Таблица-корзина: сюда переезжают листы ошибочно созданных объектов.
+ * Данные не удаляются, а сохраняются — при необходимости их можно вернуть.
+ * @return {Spreadsheet}
+ */
+function trashSpreadsheet_() {
+  const name = CONFIG.TRASH_SPREADSHEET;
+  const folder = archiveFolder_();
+  const it = folder.getFilesByName(name);
+  if (it.hasNext()) {
+    return SpreadsheetApp.openById(it.next().getId());
+  }
+  const created = SpreadsheetApp.create(name);
+  const file = fileById_(created.getId());
+  if (file) {
+    folder.addFile(file);
+    try {
+      DriveApp.getRootFolder().removeFile(file);
+    } catch (e) {
+      // Не критично.
+    }
+  }
+  return created;
+}
+
+/**
  * Отчёт о доступе к Диску — для проверки разрешений.
  * @return {Object}
  */

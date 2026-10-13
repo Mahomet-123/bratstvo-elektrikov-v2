@@ -9,7 +9,7 @@
  * ============================================================================
  */
 
-const VERSION = 'v2.0.0';
+const VERSION = 'v2.0.3';
 const CACHE_STATIC = 'be-static-' + VERSION;
 const CACHE_RUNTIME = 'be-runtime-' + VERSION;
 
@@ -33,8 +33,10 @@ const PRECACHE = [
   './js/core/store.js',
   './js/core/styles.js',
   './js/core/toast.js',
+  './js/core/estimate.js',
   './js/api/apiClient.js',
   './js/api/endpoints.js',
+  './js/components/common/badges.js',
   './js/components/Login/Login.js',
   './js/components/Login/styles/Login.css',
   './js/components/AppShell/AppShell.js',
@@ -42,7 +44,18 @@ const PRECACHE = [
   './js/components/Profile/Profile.js',
   './js/components/Profile/styles/Profile.css',
   './js/components/SyncIndicator/SyncIndicator.js',
-  './js/components/SyncIndicator/styles/SyncIndicator.css'
+  './js/components/SyncIndicator/styles/SyncIndicator.css',
+  './js/components/ObjectsList/ObjectsList.js',
+  './js/components/ObjectsList/styles/ObjectsList.css',
+  './js/components/ObjectForm/ObjectForm.js',
+  './js/components/ObjectForm/styles/ObjectForm.css',
+  './js/components/ObjectCard/ObjectCard.js',
+  './js/components/ObjectCard/styles/ObjectCard.css',
+  './js/components/Calculator/Calculator.js',
+  './js/components/Calculator/CalcPicker.js',
+  './js/components/Calculator/styles/Calculator.css',
+  './js/components/DaysJournal/DaysJournal.js',
+  './js/components/DaysJournal/styles/DaysJournal.css'
 ];
 
 /** Адреса API — их кэшировать нельзя ни в каком виде. */

@@ -1,0 +1,168 @@
+/* ==========================================================================
+   ObjectsList.css — экран «Объекты»
+   Ответственность: поиск, вкладки отбора, карточки объектов, кнопка создания.
+   ========================================================================== */
+
+.objects {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+
+/* --- Поиск -------------------------------------------------------------- */
+
+.objects__search {
+  position: relative;
+}
+
+.objects__search-icon {
+  position: absolute;
+  left: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--c-faint);
+  display: flex;
+  pointer-events: none;
+}
+
+.objects__search-input {
+  padding-left: 38px;
+}
+
+.objects__search-input::-webkit-search-cancel-button {
+  cursor: pointer;
+}
+
+/* --- Вкладки ------------------------------------------------------------ */
+
+.objects__tabs {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+
+.objects__tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.objects__tabs .tabs__item {
+  flex: none;
+  padding: 0 14px;
+  white-space: nowrap;
+}
+
+/* --- Список ------------------------------------------------------------- */
+
+.objects__list {
+  min-height: 120px;
+}
+
+.objects__rows {
+  gap: var(--sp-3);
+}
+
+/* --- Карточка объекта --------------------------------------------------- */
+
+.object-card {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: var(--sp-4);
+  background: var(--c-surface);
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-l);
+  box-shadow: var(--sh-s);
+}
+
+.object-card--tap {
+  cursor: pointer;
+  transition: border-color var(--t-fast), transform var(--t-fast);
+}
+
+.object-card--tap:active {
+  transform: scale(0.995);
+  border-color: var(--c-border-strong);
+}
+
+.object-card__top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  margin-bottom: var(--sp-2);
+}
+
+.object-card__num {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--c-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.object-card__title {
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1.3;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.object-card__sub {
+  font-size: 13px;
+  color: var(--c-muted);
+  margin-top: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.object-card__totals {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--sp-2);
+  margin-top: var(--sp-3);
+  padding-top: var(--sp-3);
+  border-top: 1px solid var(--c-border);
+}
+
+.object-card__total {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.object-card__total-label {
+  font-size: 11px;
+  color: var(--c-faint);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.object-card__total-value {
+  font-size: 14px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.object-card__foot {
+  margin-top: var(--sp-3);
+  font-size: 12px;
+  color: var(--c-faint);
+}
+
+/* --- Кнопка создания ---------------------------------------------------- */
+
+.objects__foot {
+  margin-top: var(--sp-2);
+}
+
+.objects__empty-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--c-faint);
+}

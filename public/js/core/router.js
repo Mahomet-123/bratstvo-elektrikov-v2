@@ -16,10 +16,12 @@ import { log } from './logger.js';
  */
 function compile(pattern) {
   const keys = [];
+  // Слэш в регулярном выражении из строки не является служебным символом,
+  // поэтому параметры ищем как «/:имя» — без экранирования слэша.
   const source = pattern
     .replace(/\/+$/, '')
     .replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-    .replace(/\\\/:([A-Za-z0-9_]+)/g, (match, key) => {
+    .replace(/\/:([A-Za-z0-9_]+)/g, (match, key) => {
       keys.push(key);
       return '/([^/]+)';
     });

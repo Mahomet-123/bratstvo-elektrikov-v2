@@ -55,12 +55,18 @@ function setupInit_() {
 
     // 1. Листы-реестры по схеме из Config.
     const created = [];
+    const updated = [];
     Object.keys(SCHEMA).forEach(function (name) {
       const existed = !!sheetByName_(name);
-      ensureSheet_(name, SCHEMA[name]);
-      if (!existed) created.push(name);
+      const result = ensureSchema_(name);
+      if (!existed && result === 'создан') created.push(name);
+      if (result === 'обновлена') updated.push(name);
     });
-    report.steps.push({ 'листы созданы': created, 'всего листов': Object.keys(SCHEMA).length });
+    report.steps.push({
+      'листы созданы': created,
+      'шапки обновлены': updated,
+      'всего листов в схеме': Object.keys(SCHEMA).length
+    });
 
     // 2. Текстовый формат для колонок с кодами и телефонами —
     //    иначе Google Таблицы превратят «0000» в число 0.

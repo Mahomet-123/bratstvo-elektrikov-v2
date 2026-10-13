@@ -49,6 +49,67 @@ function check(file, ext) {
   }
 }
 
+/**
+ * Имена, которые модуль отдаёт наружу.
+ * Разбор простой: экспорт объявлений, список export {...} и экспорт по умолчанию.
+ */
+function exportedNames(file) {
+  const src = fs.readFileSync(file, 'utf8');
+  const names = new Set();
+  let m;
+
+  const declared = /export\s+(?:async\s+)?(?:function|const|let|var|class)\s+([A-Za-z0-9_$]+)/g;
+  while ((m = declared.exec(src))) names.add(m[1]);
+
+  const listed = /export\s*\{([^}]+)\}/g;
+  while ((m = listed.exec(src))) {
+    m[1].split(',').forEach((part) => {
+      const name = part.trim().split(/\s+as\s+/).pop().trim();
+      if (name) names.add(name);
+    });
+  }
+
+  if (/export\s+default/.test(src)) names.add('default');
+  return names;
+}
+
+/**
+ * Проверка, что все именованные импорты фронтенда действительно объявлены
+ * в целевых модулях. Обычная проверка синтаксиса такое не ловит, а браузер
+ * на этом падает целиком — поэтому проверяем отдельно.
+ */
+function checkImports() {
+  const problems = [];
+  const files = collect(path.join(ROOT, 'public', 'js'), '.js');
+
+  for (const file of files) {
+    const src = fs.readFileSync(file, 'utf8');
+    const re = /import\s*\{([^}]+)\}\s*from\s*['"]([^'"]+)['"]/g;
+    let m;
+    while ((m = re.exec(src))) {
+      const spec = m[2];
+      if (!spec.startsWith('.')) continue;
+
+      const target = path.resolve(path.dirname(file), spec);
+      const rel = path.relative(ROOT, file).replace(/\\/g, '/');
+
+      if (!fs.existsSync(target)) {
+        problems.push(rel + ' → нет файла ' + spec);
+        continue;
+      }
+
+      const available = exportedNames(target);
+      m[1].split(',').forEach((part) => {
+        const name = part.trim().split(/\s+as\s+/)[0].trim();
+        if (name && !available.has(name)) {
+          problems.push(rel + ' → в ' + spec + ' нет экспорта «' + name + '»');
+        }
+      });
+    }
+  }
+  return problems;
+}
+
 const targets = []
   .concat(collect(path.join(ROOT, 'backend'), '.gs').map((f) => ({ f, ext: '.cjs' })))
   .concat(collect(path.join(ROOT, 'public', 'js'), '.js').map((f) => ({ f, ext: '.mjs' })))
@@ -70,9 +131,18 @@ for (const t of targets) {
 
 try { fs.rmSync(TMP, { recursive: true, force: true }); } catch (e) { /* не критично */ }
 
-console.log('\nПроверено файлов: ' + targets.length + ', ошибок: ' + failures.length);
-if (failures.length) {
-  console.error('\nНе прошли проверку:\n  ' + failures.join('\n  '));
+// Второй проход: связность модулей фронтенда.
+const importProblems = checkImports();
+if (importProblems.length) {
+  console.log('\nИмпорты фронтенда:');
+  importProblems.forEach((line) => console.log('  ОШИБКА ' + line));
+}
+
+console.log('\nПроверено файлов: ' + targets.length + ', ошибок: ' + failures.length +
+  ', проблем с импортами: ' + importProblems.length);
+
+if (failures.length || importProblems.length) {
+  if (failures.length) console.error('\nНе прошли проверку:\n  ' + failures.join('\n  '));
   process.exit(1);
 }
 console.log('Синтаксис в порядке.');

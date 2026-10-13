@@ -1,0 +1,322 @@
+/* ==========================================================================
+   Calculator.css — экран расчёта стоимости
+   Ответственность: блок итога, строки позиций, поля количества и коэффициента,
+   блок наценок и скидки, кнопка сохранения.
+   ========================================================================== */
+
+.calc {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+
+.calc__section {
+  display: flex;
+  flex-direction: column;
+}
+
+.calc__error:empty {
+  display: none;
+}
+
+/* --- Блок итога --------------------------------------------------------- */
+
+.calc-summary {
+  background: linear-gradient(160deg, var(--c-primary), var(--c-primary-dark));
+  color: var(--c-on-accent);
+  border-radius: var(--r-l);
+  padding: var(--sp-4);
+  box-shadow: var(--sh-m);
+}
+
+.calc-summary__top {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.calc-summary__label {
+  font-size: 13px;
+  opacity: 0.85;
+}
+
+.calc-summary__total {
+  font-size: 26px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
+
+.calc-summary__lines {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: var(--sp-3);
+  padding-top: var(--sp-3);
+  border-top: 1px solid rgba(255, 255, 255, 0.25);
+}
+
+.calc-summary__line {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  font-size: 14px;
+}
+
+.calc-summary__line-label {
+  display: flex;
+  flex-direction: column;
+  opacity: 0.9;
+}
+
+.calc-summary__line-hint {
+  font-size: 11px;
+  opacity: 0.7;
+}
+
+.calc-summary__line-value {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.calc-summary__positions {
+  margin-top: var(--sp-3);
+  font-size: 12px;
+  opacity: 0.8;
+}
+
+/* --- Список позиций ----------------------------------------------------- */
+
+.calc__list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+
+.calc-row {
+  padding: var(--sp-3) var(--sp-4) var(--sp-4);
+}
+
+.calc-row__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--sp-2);
+}
+
+.calc-row__title {
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.calc-row__remove {
+  flex: none;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--r-s);
+  color: var(--c-danger);
+}
+
+.calc-row__remove:active {
+  background: var(--c-danger-soft);
+}
+
+.calc-row__meta {
+  font-size: 12px;
+  color: var(--c-muted);
+  margin-top: 2px;
+}
+
+.calc-row__fields {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1.2fr;
+  gap: var(--sp-2);
+  margin-top: var(--sp-3);
+}
+
+.calc-row__field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.calc-row__field-label {
+  font-size: 11px;
+  color: var(--c-faint);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.calc-row__input {
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.calc-row__field--sum {
+  justify-content: flex-start;
+}
+
+.calc-row__sum {
+  font-size: 15px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  padding: 7px 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.calc__add {
+  margin-top: var(--sp-3);
+}
+
+.calc__empty-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--c-faint);
+}
+
+/* --- Наценки и скидка --------------------------------------------------- */
+
+.calc__discount-tabs {
+  margin-bottom: var(--sp-2);
+}
+
+.calc__save {
+  position: sticky;
+  bottom: calc(var(--nav-h) + var(--safe-bottom) + var(--sp-3));
+  box-shadow: var(--sh-m);
+  margin-top: var(--sp-2);
+}
+
+/* --- Окно выбора позиций ------------------------------------------------ */
+
+.calc-picker {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+
+.calc-picker__search {
+  margin-bottom: 0;
+}
+
+.calc-picker__counter {
+  font-size: 12px;
+  color: var(--c-muted);
+  padding: 0 2px;
+}
+
+.calc-picker__list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  max-height: 52vh;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.calc-picker__section {
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-m);
+  overflow: hidden;
+}
+
+.calc-picker__section-head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  width: 100%;
+  padding: 11px var(--sp-3);
+  background: var(--c-surface-2);
+  text-align: left;
+}
+
+.calc-picker__section-name {
+  flex: 1;
+  min-width: 0;
+  font-size: 14px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.calc-picker__section-count {
+  flex: none;
+  font-size: 12px;
+  color: var(--c-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.calc-picker__section-arrow {
+  flex: none;
+  display: flex;
+  color: var(--c-faint);
+  transform: rotate(-90deg);
+  transition: transform var(--t-fast);
+}
+
+.calc-picker__section-arrow--open {
+  transform: rotate(-270deg);
+}
+
+.calc-picker__items {
+  display: flex;
+  flex-direction: column;
+}
+
+.calc-picker__item {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  width: 100%;
+  padding: 10px var(--sp-3);
+  text-align: left;
+  border-top: 1px solid var(--c-border);
+  transition: background var(--t-fast);
+}
+
+.calc-picker__item:active {
+  background: var(--c-surface-2);
+}
+
+.calc-picker__item--added {
+  opacity: 0.55;
+}
+
+.calc-picker__item--added .calc-picker__item-side {
+  color: var(--c-success);
+}
+
+.calc-picker__item-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.calc-picker__item-name {
+  display: block;
+  font-size: 14px;
+  line-height: 1.3;
+}
+
+.calc-picker__item-meta {
+  display: block;
+  font-size: 12px;
+  color: var(--c-muted);
+  margin-top: 1px;
+}
+
+.calc-picker__item-side {
+  flex: none;
+  display: flex;
+  color: var(--c-primary);
+}

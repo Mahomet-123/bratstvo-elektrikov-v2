@@ -88,6 +88,8 @@ export function createAppShell(props) {
     routes: [
       { path: '/objects', handler: () => renderScreen('/objects', { title: 'Объекты' }) },
       { path: '/object/new', handler: () => renderScreen('/object/new', { title: 'Новый объект', back: true }) },
+      { path: '/object/:id/calc', handler: (params) => renderScreen('/object/:id/calc', { title: 'Расчёт', back: true, params: params }) },
+      { path: '/object/:id/days', handler: (params) => renderScreen('/object/:id/days', { title: 'Журнал дней', back: true, params: params }) },
       { path: '/object/:id', handler: (params) => renderScreen('/object/:id', { title: 'Объект', back: true, params: params }) },
       { path: '/profile', handler: () => renderScreen('/profile', { title: 'Профиль' }) },
       { path: '/brigade', handler: () => renderScreen('/brigade', { title: 'Бригада', back: true }) },
@@ -159,7 +161,12 @@ export function createAppShell(props) {
       return;
     }
 
-    const screen = factory(info.params || {});
+    // Экранам передаём не только параметры адреса, но и инструменты каркаса:
+    // так они могут сами уточнить заголовок и перейти на другой экран.
+    const screen = factory(info.params || {}, {
+      setTitle: setTitle,
+      navigate: (path, replace) => router.go(path, replace)
+    });
     if (screen && screen.el) {
       main.appendChild(screen.el);
       mounted = screen;

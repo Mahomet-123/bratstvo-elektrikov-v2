@@ -411,3 +411,85 @@ function deleteBlockRow_(sheetName, rowNumber) {
   sh.deleteRow(rowNumber);
   return true;
 }
+
+/**
+ * Приведение шапки листа к актуальной схеме.
+ * Если лист пуст — шапка перезаписывается. Если данные есть, лист не трогаем:
+ * лучше предупредить, чем потерять чужие записи.
+ * @param {string} name — имя листа из SCHEMA
+ * @return {string} 'ок' | 'создан' | 'обновлена' | 'данные есть, шапка не тронута' | 'нет схемы'
+ */
+function ensureSchema_(name) {
+  const header = SCHEMA[name];
+  if (!header || !header.length) return 'нет схемы';
+
+  const ss = ss_();
+  let sh = ss.getSheetByName(name);
+  if (!sh) {
+    sh = ss.insertSheet(name);
+    writeHeader_(sh, header);
+    return 'создан';
+  }
+
+  const lastCol = Math.max(sh.getLastColumn(), 1);
+  const current = sh.getRange(1, 1, 1, lastCol).getValues()[0].map(str_);
+  const same = current.length === header.length &&
+    header.every(function (key, index) { return current[index] === key; });
+  if (same) return 'ок';
+
+  if (sh.getLastRow() > 1) {
+    logError_('Sheets.ensureSchema_', 'Шапка листа «' + name + '» отличается от схемы, но в листе есть данные', {
+      текущая: current,
+      ожидаемая: header
+    });
+    return 'данные есть, шапка не тронута';
+  }
+
+  writeHeader_(sh, header);
+  // Лишние колонки старой шапки очищаем, чтобы не путали.
+  if (current.length > header.length) {
+    sh.getRange(1, header.length + 1, 1, current.length - header.length).clearContent();
+  }
+  return 'обновлена';
+}
+
+/**
+ * Запись строки заголовков с оформлением.
+ * @param {Sheet} sh
+ * @param {Array<string>} header
+ */
+function writeHeader_(sh, header) {
+  sh.getRange(1, 1, 1, header.length).setValues([header]);
+  sh.getRange(1, 1, 1, header.length).setFontWeight('bold').setBackground('#eef2f7');
+  sh.setFrozenRows(1);
+}
+
+/**
+ * Перенос листа в другую таблицу: сначала копия, потом удаление оригинала.
+ * Используется для корзины и архива — данные не пропадают, а переезжают.
+ * @param {string} sheetName
+ * @param {Spreadsheet} target
+ * @return {string} имя листа в целевой таблице
+ */
+function moveSheetTo_(sheetName, target) {
+  const source = ss_();
+  const sh = source.getSheetByName(sheetName);
+  assert_(sh, 'Лист «' + sheetName + '» не найден.', 'NOT_FOUND');
+  assert_(target, 'Не указана целевая таблица.', 'VALIDATION');
+  assert_(source.getSheets().length > 1, 'Нельзя перенести единственный лист таблицы.', 'VALIDATION');
+
+  const copy = sh.copyTo(target);
+  source.deleteSheet(sh);
+  return copy.getName();
+}
+
+/**
+ * Копирование листа в другую таблицу без удаления оригинала.
+ * @param {string} sheetName
+ * @param {Spreadsheet} target
+ * @return {string}
+ */
+function copySheetTo_(sheetName, target) {
+  const sh = requireSheet_(sheetName);
+  return sh.copyTo(target).getName();
+}

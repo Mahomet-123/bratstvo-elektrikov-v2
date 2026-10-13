@@ -15,7 +15,8 @@
     "gas:deploy": "clasp deploy -i AKfycbxyAah88qWJJvNzNL8sjGdwixn_stixWCX8vJkq7qy_2PhpooTASp2j-7W46HIBJXc- -d \"Братство электриков 2\"",
     "check": "node scripts/check-syntax.js",
     "serve": "node scripts/serve.js",
-    "e2e": "node scripts/e2e.js"
+    "e2e": "node scripts/e2e.js",
+    "e2e:front": "node scripts/e2e-front.js"
   },
   "devDependencies": {
     "@google/clasp": "^2.5.0",

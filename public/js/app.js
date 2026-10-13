@@ -17,6 +17,11 @@ import { api } from './api/endpoints.js';
 import { createLogin } from './components/Login/Login.js';
 import { createAppShell } from './components/AppShell/AppShell.js';
 import { createProfile } from './components/Profile/Profile.js';
+import { createObjectsList } from './components/ObjectsList/ObjectsList.js';
+import { createObjectScreen } from './components/ObjectForm/ObjectForm.js';
+import { createObjectCard } from './components/ObjectCard/ObjectCard.js';
+import { createCalculator } from './components/Calculator/Calculator.js';
+import { createDaysJournal } from './components/DaysJournal/DaysJournal.js';
 import { CONFIG } from './config.js';
 
 const root = qs('#app');
@@ -89,10 +94,39 @@ function mountShell() {
     }
   });
 
+  /** Переход на экран через роутер каркаса. */
+  const go = (path, replace) => shell.router.go(path, replace);
+
   // Регистрация экранов.
   shell.register('/profile', () => createProfile({
     onLogout: () => mountLogin(),
-    onNavigate: (path) => shell.router.go(path)
+    onNavigate: go
+  }));
+
+  shell.register('/objects', () => createObjectsList({
+    onNavigate: go
+  }));
+
+  shell.register('/object/new', () => createObjectScreen({
+    onNavigate: go
+  }));
+
+  shell.register('/object/:id', (params, tools) => createObjectCard({
+    id: params.id,
+    onNavigate: go,
+    onTitle: (title, subtitle) => tools.setTitle(title, subtitle)
+  }));
+
+  shell.register('/object/:id/calc', (params, tools) => createCalculator({
+    id: params.id,
+    onNavigate: go,
+    onTitle: (title, subtitle) => tools.setTitle(title, subtitle)
+  }));
+
+  shell.register('/object/:id/days', (params, tools) => createDaysJournal({
+    id: params.id,
+    onNavigate: go,
+    onTitle: (title, subtitle) => tools.setTitle(title, subtitle)
   }));
 
   setContent(root, shell.el);

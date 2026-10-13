@@ -115,8 +115,9 @@ function loginUser_(name, code, meta) {
   logVisit_(user.name, user.role, 'вход', meta);
 
   return {
+    // session.user уже прошёл через publicUser_ внутри createSession_.
     token: session.token,
-    user: publicUser_(session),
+    user: session.user,
     expires: session.expires,
     mustChangeCode: needsCodeChange_(user)
   };

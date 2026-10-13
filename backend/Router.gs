@@ -179,6 +179,101 @@ const ROUTES_ = {
     handler: function (ctx) {
       return clearStatus_(ctx.token);
     }
+  },
+
+  /* --- Объекты --- */
+
+  'objects.list': {
+    auth: 'user',
+    handler: function (ctx) {
+      return listObjects_(ctx.token, ctx.payload || {});
+    }
+  },
+
+  'objects.get': {
+    auth: 'user',
+    handler: function (ctx) {
+      return getObjectCard_(ctx.token, (ctx.payload || {}).id);
+    }
+  },
+
+  'objects.create': {
+    auth: 'user',
+    handler: function (ctx) {
+      return createObject_(ctx.token, ctx.payload || {});
+    }
+  },
+
+  'objects.update': {
+    auth: 'user',
+    handler: function (ctx) {
+      const p = ctx.payload || {};
+      return updateObject_(ctx.token, p.id, p);
+    }
+  },
+
+  'objects.setStatus': {
+    auth: 'user',
+    handler: function (ctx) {
+      const p = ctx.payload || {};
+      return setObjectStatus_(ctx.token, p.id, p.status);
+    }
+  },
+
+  'objects.remove': {
+    auth: 'leader',
+    handler: function (ctx) {
+      return removeObject_(ctx.token, (ctx.payload || {}).id);
+    }
+  },
+
+  /* --- Расчёт --- */
+
+  'calc.get': {
+    auth: 'user',
+    handler: function (ctx) {
+      return calcGet_(ctx.token, (ctx.payload || {}).id);
+    }
+  },
+
+  'calc.save': {
+    auth: 'user',
+    handler: function (ctx) {
+      const p = ctx.payload || {};
+      return calcSave_(ctx.token, p.id, p.payload || {});
+    }
+  },
+
+  /* --- Журнал дней --- */
+
+  'days.list': {
+    auth: 'user',
+    handler: function (ctx) {
+      return daysList_(ctx.token, (ctx.payload || {}).id);
+    }
+  },
+
+  'days.add': {
+    auth: 'user',
+    handler: function (ctx) {
+      const p = ctx.payload || {};
+      return addDay_(ctx.token, p.id, p.day || {});
+    }
+  },
+
+  'days.remove': {
+    auth: 'user',
+    handler: function (ctx) {
+      const p = ctx.payload || {};
+      return daysRemove_(ctx.token, p.id, p.rowId);
+    }
+  },
+
+  'days.today': {
+    auth: 'leader',
+    handler: function (ctx) {
+      return todayRecords_(ctx.token, (ctx.payload || {}).date);
+    }
   }
 };
 

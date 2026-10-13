@@ -261,6 +261,13 @@ table {
   resize: vertical;
 }
 
+/* Компактное поле — для ввода внутри строк списков (количество, коэффициент). */
+.input--sm {
+  padding: 7px 10px;
+  font-size: 14px;
+  border-radius: var(--r-s);
+}
+
 .input:focus,
 .select:focus,
 .textarea:focus {

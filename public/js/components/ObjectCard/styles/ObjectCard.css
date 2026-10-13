@@ -1,0 +1,122 @@
+/* ==========================================================================
+   ObjectCard.css — карточка объекта
+   Ответственность: шапка объекта, реквизиты, показатели, строки переходов,
+   кнопки смены статуса и управления.
+   ========================================================================== */
+
+.object-card-screen {
+  display: flex;
+  flex-direction: column;
+}
+
+.object-card-screen__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+}
+
+/* --- Шапка -------------------------------------------------------------- */
+
+.object-card-screen__hero {
+  padding: var(--sp-4);
+}
+
+.object-card-screen__hero-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  margin-bottom: var(--sp-2);
+}
+
+.object-card-screen__num {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--c-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.object-card-screen__title {
+  font-size: 20px;
+  font-weight: 600;
+  line-height: 1.25;
+}
+
+.object-card-screen__facts {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  margin-top: var(--sp-3);
+  padding-top: var(--sp-3);
+  border-top: 1px solid var(--c-border);
+}
+
+.object-card-screen__fact {
+  display: flex;
+  gap: var(--sp-3);
+  font-size: 14px;
+}
+
+.object-card-screen__fact-label {
+  flex: none;
+  width: 78px;
+  color: var(--c-muted);
+}
+
+.object-card-screen__fact-value {
+  flex: 1;
+  min-width: 0;
+  word-break: break-word;
+}
+
+.object-card-screen__fact--link .object-card-screen__fact-value {
+  color: var(--c-primary);
+  font-weight: 500;
+}
+
+/* --- Секции ------------------------------------------------------------- */
+
+.object-card-screen__section {
+  display: flex;
+  flex-direction: column;
+}
+
+.object-card-screen__row-icon {
+  flex: none;
+  width: 34px;
+  height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--r-s);
+  background: var(--c-surface-3);
+  color: var(--c-primary);
+}
+
+.object-card-screen__chevron {
+  color: var(--c-faint);
+  transform: rotate(180deg);
+}
+
+.object-card-screen__row--danger .row__title {
+  color: var(--c-danger);
+}
+
+.object-card-screen__row--danger .object-card-screen__row-icon {
+  color: var(--c-danger);
+}
+
+/* --- Действия ----------------------------------------------------------- */
+
+.object-card-screen__actions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+
+.object-card-screen__empty-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--c-faint);
+}

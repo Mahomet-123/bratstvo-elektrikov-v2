@@ -1,0 +1,89 @@
+/* ==========================================================================
+   DaysJournal.css — журнал дней объекта
+   Ответственность: итог по часам, форма записи дня, список записей с отметкой
+   повтора и кнопкой удаления.
+   ========================================================================== */
+
+.day-journal {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+}
+
+.day-journal__section {
+  display: flex;
+  flex-direction: column;
+}
+
+/* --- Форма -------------------------------------------------------------- */
+
+.day-form .field:last-of-type {
+  margin-bottom: var(--sp-3);
+}
+
+.day-form .textarea {
+  min-height: 72px;
+}
+
+/* --- Список ------------------------------------------------------------- */
+
+.day-journal__rows {
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-l);
+  overflow: hidden;
+  background: var(--c-surface);
+}
+
+.day-record {
+  align-items: flex-start;
+}
+
+.day-record__top {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  flex-wrap: wrap;
+}
+
+.day-record__date {
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.day-record__work {
+  display: block;
+  font-size: 14px;
+  color: var(--c-text);
+  margin-top: 4px;
+  white-space: normal;
+  word-break: break-word;
+}
+
+.day-record__meta {
+  display: block;
+  font-size: 12px;
+  color: var(--c-muted);
+  margin-top: 4px;
+}
+
+.day-record__remove {
+  flex: none;
+  width: 34px;
+  height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--r-s);
+  color: var(--c-danger);
+}
+
+.day-record__remove:active {
+  background: var(--c-danger-soft);
+}
+
+.day-journal__empty-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--c-faint);
+}
