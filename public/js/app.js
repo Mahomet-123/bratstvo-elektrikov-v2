@@ -1,0 +1,214 @@
+/**
+ * ============================================================================
+ * Модуль: app
+ * Ответственность: запуск приложения — обработка ошибок, регистрация сервис-воркера,
+ *                  восстановление сессии, выбор между экраном входа и рабочим
+ *                  каркасом, регистрация экранов и запуск навигации.
+ * Зависимости: все модули ядра, api, компоненты
+ * ============================================================================
+ */
+
+import { qs, setContent } from './core/dom.js';
+import { log, installGlobalHandlers, setSender } from './core/logger.js';
+import { store, loadSession, saveSession, cachePrices, readCachedPrices } from './core/store.js';
+import { toastError, toastWarning, toastSuccess } from './core/toast.js';
+import { describeError } from './api/apiClient.js';
+import { api } from './api/endpoints.js';
+import { createLogin } from './components/Login/Login.js';
+import { createAppShell } from './components/AppShell/AppShell.js';
+import { createProfile } from './components/Profile/Profile.js';
+import { CONFIG } from './config.js';
+
+const root = qs('#app');
+
+/** Ссылки на смонтированные части интерфейса. */
+let shell = null;
+
+/* --------------------------------------------------------------------------
+ * Запуск
+ * ------------------------------------------------------------------------ */
+
+/**
+ * Точка входа.
+ */
+async function start() {
+  installGlobalHandlers();
+  setSender((entry) => {
+    // Сбои клиента уходят в журнал посещений, чтобы их видел руководитель.
+    api.visitsLog('ошибка клиента: ' + entry.message).catch(() => {});
+  });
+
+  trackConnection();
+  registerServiceWorker();
+
+  const session = loadSession();
+  if (session) {
+    mountShell();
+  } else {
+    mountLogin();
+  }
+}
+
+/* --------------------------------------------------------------------------
+ * Экран входа
+ * ------------------------------------------------------------------------ */
+
+/** Показать экран входа. */
+function mountLogin() {
+  if (shell && typeof shell.destroy === 'function') shell.destroy();
+  shell = null;
+
+  const login = createLogin({
+    onSuccess: (result) => {
+      saveSession({ token: result.token, user: result.user, expires: result.expires }, result.mustChangeCode);
+      mountShell();
+      if (result.mustChangeCode) {
+        toastWarning('Вы вошли под заводским кодом 0000. Смените его в профиле.', 6000);
+      }
+    }
+  });
+
+  setContent(root, login.el);
+}
+
+/* --------------------------------------------------------------------------
+ * Рабочая область
+ * ------------------------------------------------------------------------ */
+
+/** Показать рабочий каркас. */
+function mountShell() {
+  shell = createAppShell({
+    onLogout: () => {
+      mountLogin();
+    },
+    onManualSend: () => {
+      // Отправка очереди подключается на этапе офлайн-очереди.
+      const count = Number(store.get().queueCount) || 0;
+      if (!count) toastSuccess('Всё отправлено — очередь пуста');
+      else toastWarning('Очередь обрабатывается автоматически при появлении сети');
+    }
+  });
+
+  // Регистрация экранов.
+  shell.register('/profile', () => createProfile({
+    onLogout: () => mountLogin(),
+    onNavigate: (path) => shell.router.go(path)
+  }));
+
+  setContent(root, shell.el);
+  shell.router.start();
+
+  if (store.get().mustChangeCode) {
+    shell.router.go('/profile', true);
+  }
+
+  logVisit();
+  warmUp();
+}
+
+/** Отметить вход в журнале посещений — один раз за запуск. */
+function logVisit() {
+  if (store.get().visitsLogged) return;
+  store.patch({ visitsLogged: true });
+  api.visitsLog('открыл приложение', {
+    user: store.get().user ? store.get().user.name : '',
+    role: store.get().user ? store.get().user.role : ''
+  }).catch(() => {
+    // Журнал посещений не критичен — молча пропускаем.
+  });
+}
+
+/** Предзагрузка прайса: сначала из кэша, затем с сервера. */
+async function warmUp() {
+  const cached = readCachedPrices();
+  if (cached) {
+    cachePrices(cached);
+    log.info('Прайс взят из кэша: ' + (cached.total || 0) + ' позиций');
+  }
+
+  try {
+    const fresh = await api.pricesList();
+    cachePrices(fresh);
+    log.info('Прайс обновлён: ' + (fresh.total || 0) + ' позиций');
+  } catch (error) {
+    if (!cached) toastError('Не удалось загрузить прайс: ' + describeError(error));
+  }
+}
+
+/* --------------------------------------------------------------------------
+ * Состояние сети
+ * ------------------------------------------------------------------------ */
+
+/** Слежение за подключением к сети. */
+function trackConnection() {
+  const update = () => {
+    const online = navigator.onLine;
+    const was = store.get().online;
+    store.patch({ online: online });
+    if (online && !was) toastSuccess('Связь восстановлена');
+    if (!online && was) toastWarning('Нет сети — записи сохраняются на телефоне', 5000);
+  };
+
+  window.addEventListener('online', update);
+  window.addEventListener('offline', update);
+  update();
+}
+
+/* --------------------------------------------------------------------------
+ * Сервис-воркер
+ * ------------------------------------------------------------------------ */
+
+/** Регистрация сервис-воркера — основа офлайн-работы. */
+function registerServiceWorker() {
+  if (!('serviceWorker' in navigator)) {
+    log.warn('Сервис-воркер не поддерживается браузером');
+    return;
+  }
+
+  window.addEventListener('load', () => {
+    navigator.serviceWorker
+      .register('sw.js', { scope: './' })
+      .then((registration) => {
+        log.info('Сервис-воркер зарегистрирован');
+        // Проверяем обновления при каждом запуске.
+        registration.update().catch(() => {});
+      })
+      .catch((error) => {
+        log.warn('Сервис-воркер не зарегистрирован', error.message);
+      });
+  });
+}
+
+/* --------------------------------------------------------------------------
+ * Поехали
+ * ------------------------------------------------------------------------ */
+
+start().catch((error) => {
+  log.error('Приложение не запустилось', error && error.message);
+  setContent(root,
+    (() => {
+      const box = document.createElement('div');
+      box.className = 'page';
+      const card = document.createElement('div');
+      card.className = 'card';
+      const body = document.createElement('div');
+      body.className = 'card__body';
+      const title = document.createElement('div');
+      title.className = 'h2';
+      title.textContent = 'Приложение не запустилось';
+      const text = document.createElement('p');
+      text.className = 'text-muted';
+      text.style.marginTop = '8px';
+      text.textContent = 'Обновите страницу. Если не поможет — сообщите руководителю: ' +
+        (error && error.message ? error.message : 'неизвестная ошибка');
+      body.appendChild(title);
+      body.appendChild(text);
+      card.appendChild(body);
+      box.appendChild(card);
+      return box;
+    })()
+  );
+});
+
+// Справочно для отладки в консоли браузера.
+window.__BRATSTVO__ = { store, CONFIG };

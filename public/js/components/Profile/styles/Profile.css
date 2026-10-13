@@ -1,0 +1,103 @@
+/* ==========================================================================
+   Profile.css — профиль пользователя
+   Блок: .profile
+   ========================================================================== */
+
+.profile__hero {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-4);
+  padding: var(--sp-5);
+  background: var(--c-surface);
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-l);
+  box-shadow: var(--sh-s);
+}
+
+.profile__avatar {
+  width: 54px;
+  height: 54px;
+  flex: none;
+  border-radius: var(--r-pill);
+  background: var(--c-primary-soft);
+  color: var(--c-primary-dark);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.profile__name {
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.profile__role {
+  font-size: 13px;
+  color: var(--c-muted);
+  margin-top: 2px;
+}
+
+.profile__alert {
+  display: flex;
+  gap: var(--sp-3);
+  align-items: flex-start;
+  padding: var(--sp-4);
+  margin-top: var(--sp-3);
+  border-radius: var(--r-l);
+  background: var(--c-accent-soft);
+  color: #6f4a00;
+  font-size: 13px;
+}
+
+.profile__alert-icon {
+  flex: none;
+  margin-top: 1px;
+}
+
+.profile__alert-title {
+  font-weight: 600;
+  margin-bottom: 3px;
+}
+
+.profile__status-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  padding: 12px var(--sp-4);
+  border-bottom: 1px solid var(--c-border);
+}
+
+.profile__status-row:last-child {
+  border-bottom: none;
+}
+
+.profile__status-label {
+  font-size: 14px;
+  color: var(--c-muted);
+}
+
+.profile__status-value {
+  font-size: 14px;
+  font-weight: 500;
+  text-align: right;
+}
+
+.profile__about {
+  font-size: 13px;
+  color: var(--c-muted);
+  line-height: 1.6;
+}
+
+.profile__about code {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  word-break: break-all;
+  color: var(--c-text);
+}
+
+.profile__logout {
+  margin-top: var(--sp-5);
+}

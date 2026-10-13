@@ -1,0 +1,24 @@
+{
+  "name": "bratstvo-elektrikov-v2",
+  "version": "2.0.0",
+  "private": true,
+  "description": "Братство Электриков v2 — PWA для электромонтажной бригады: расчёт по прайсу, объекты, журнал дней, закупки с фото накладных, офлайн-очередь отправки, PDF-отчёты клиентам",
+  "scripts": {
+    "seed": "python scripts/parse-price-pdf.py",
+    "seed:data": "node scripts/build-seed-data.js",
+    "build": "npm run seed && npm run seed:data",
+    "gas:push": "clasp push --force",
+    "gas:pull": "clasp pull",
+    "gas:status": "clasp status",
+    "gas:open": "clasp open",
+    "gas:versions": "clasp versions",
+    "gas:deploy": "clasp deploy -i AKfycbxyAah88qWJJvNzNL8sjGdwixn_stixWCX8vJkq7qy_2PhpooTASp2j-7W46HIBJXc- -d \"Братство электриков 2\"",
+    "check": "node scripts/check-syntax.js",
+    "serve": "node scripts/serve.js",
+    "e2e": "node scripts/e2e.js"
+  },
+  "devDependencies": {
+    "@google/clasp": "^2.5.0",
+    "puppeteer-core": "^25.13.0"
+  }
+}

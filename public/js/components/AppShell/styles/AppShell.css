@@ -1,0 +1,66 @@
+/* ==========================================================================
+   AppShell.css — каркас с верхней панелью и нижней навигацией
+   Блок: .shell
+   ========================================================================== */
+
+.shell {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.shell__main {
+  flex: 1;
+}
+
+.shell__nav-badge {
+  position: absolute;
+  top: 4px;
+  right: 50%;
+  transform: translateX(20px);
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: var(--r-pill);
+  background: var(--c-danger);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.app-nav__item {
+  position: relative;
+}
+
+.shell__soon {
+  padding: var(--sp-8) var(--sp-5);
+  text-align: center;
+}
+
+.shell__soon-mark {
+  width: 56px;
+  height: 56px;
+  margin: 0 auto var(--sp-4);
+  border-radius: var(--r-l);
+  background: var(--c-primary-soft);
+  color: var(--c-primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.shell__soon-title {
+  font-size: 16px;
+  font-weight: 600;
+  margin-bottom: var(--sp-2);
+}
+
+.shell__soon-text {
+  font-size: 14px;
+  color: var(--c-muted);
+  max-width: 340px;
+  margin: 0 auto;
+}

@@ -1,0 +1,57 @@
+/* ==========================================================================
+   SyncIndicator.css — индикатор состояния отправки
+   Блок: .sync
+   ========================================================================== */
+
+.sync {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 34px;
+  padding: 0 10px;
+  border-radius: var(--r-pill);
+  background: var(--c-surface-3);
+  color: var(--c-muted);
+  font-size: 12px;
+  font-weight: 500;
+  transition: background var(--t-fast), color var(--t-fast);
+}
+
+.sync--ok {
+  background: var(--c-success-soft);
+  color: var(--c-success);
+}
+
+.sync--pending {
+  background: var(--c-warning-soft);
+  color: var(--c-warning);
+}
+
+.sync--error {
+  background: var(--c-danger-soft);
+  color: var(--c-danger);
+}
+
+.sync--offline {
+  background: var(--c-surface-3);
+  color: var(--c-muted);
+}
+
+.sync__icon {
+  flex: none;
+}
+
+.sync__text {
+  white-space: nowrap;
+}
+
+.sync--spin .sync__icon {
+  animation: spin 1s linear infinite;
+}
+
+/* На узких экранах остаётся только иконка и число. */
+@media (max-width: 359px) {
+  .sync__text {
+    display: none;
+  }
+}

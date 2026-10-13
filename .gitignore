@@ -1,0 +1,17 @@
+# Зависимости и служебное
+node_modules/
+.check/
+*.log
+*.tmp
+
+# Секреты и локальные данные (в репозиторий не попадают)
+.clasprc.json
+.env
+.env.local
+scripts/tmp/
+scripts/out/
+
+# Система
+.DS_Store
+Thumbs.db
+desktop.ini

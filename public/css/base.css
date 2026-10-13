@@ -1,0 +1,326 @@
+/* ==========================================================================
+   base.css — фундамент оформления
+   Ответственность: токены дизайна, сброс стилей, базовая типографика, формы.
+   Здесь нет ни одного конкретного блока интерфейса.
+   ========================================================================== */
+
+/* --- Токены ------------------------------------------------------------- */
+
+:root {
+  /* Поверхности */
+  --c-bg: #f4f6fa;
+  --c-surface: #ffffff;
+  --c-surface-2: #f8fafc;
+  --c-surface-3: #eef2f8;
+  --c-border: #e2e7ef;
+  --c-border-strong: #cfd7e4;
+
+  /* Текст */
+  --c-text: #16202e;
+  --c-muted: #6b7688;
+  --c-faint: #98a2b3;
+  --c-on-accent: #ffffff;
+
+  /* Акценты */
+  --c-primary: #1657c4;
+  --c-primary-dark: #10429a;
+  --c-primary-soft: #e8effc;
+  --c-accent: #f2a20c;
+  --c-accent-soft: #fdf3e0;
+  --c-success: #12946a;
+  --c-success-soft: #e6f6f0;
+  --c-danger: #d0402f;
+  --c-danger-soft: #fdecea;
+  --c-warning: #b87600;
+  --c-warning-soft: #fdf1dc;
+
+  /* Геометрия */
+  --r-s: 8px;
+  --r-m: 12px;
+  --r-l: 16px;
+  --r-xl: 22px;
+  --r-pill: 999px;
+
+  /* Тени */
+  --sh-s: 0 1px 2px rgba(18, 32, 54, 0.06);
+  --sh-m: 0 6px 18px rgba(18, 32, 54, 0.08);
+  --sh-l: 0 16px 40px rgba(18, 32, 54, 0.16);
+
+  /* Отступы */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 20px;
+  --sp-6: 24px;
+  --sp-8: 32px;
+
+  /* Каркас */
+  --header-h: 56px;
+  --nav-h: 62px;
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+
+  /* Шрифт */
+  --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+
+  --t-fast: 0.15s ease;
+  --t-base: 0.22s ease;
+}
+
+/* --- Сброс -------------------------------------------------------------- */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+  -webkit-tap-highlight-color: transparent;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background: var(--c-bg);
+  color: var(--c-text);
+  font-family: var(--font);
+  font-size: 15px;
+  line-height: 1.5;
+  overscroll-behavior-y: none;
+}
+
+h1,
+h2,
+h3,
+h4,
+p,
+figure,
+blockquote {
+  margin: 0;
+}
+
+ul,
+ol {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+img,
+svg,
+video {
+  max-width: 100%;
+  display: block;
+}
+
+a {
+  color: var(--c-primary);
+  text-decoration: none;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+  color: inherit;
+}
+
+button {
+  cursor: pointer;
+  background: none;
+  border: none;
+  padding: 0;
+}
+
+table {
+  border-collapse: collapse;
+  width: 100%;
+}
+
+/* --- Базовая типографика ------------------------------------------------ */
+
+.h1 {
+  font-size: 21px;
+  font-weight: 600;
+  line-height: 1.25;
+}
+
+.h2 {
+  font-size: 17px;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.h3 {
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.text-muted {
+  color: var(--c-muted);
+}
+
+.text-faint {
+  color: var(--c-faint);
+}
+
+.text-small {
+  font-size: 13px;
+}
+
+.text-xs {
+  font-size: 12px;
+}
+
+.text-mono {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.text-strong {
+  font-weight: 600;
+}
+
+.text-center {
+  text-align: center;
+}
+
+.text-right {
+  text-align: right;
+}
+
+.nowrap {
+  white-space: nowrap;
+}
+
+.hidden {
+  display: none !important;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* --- Формы -------------------------------------------------------------- */
+
+.field {
+  display: block;
+  margin-bottom: var(--sp-4);
+}
+
+.field__label {
+  display: block;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--c-muted);
+  margin-bottom: var(--sp-2);
+}
+
+.field__hint {
+  display: block;
+  font-size: 12px;
+  color: var(--c-faint);
+  margin-top: var(--sp-1);
+}
+
+.field__error {
+  display: block;
+  font-size: 12px;
+  color: var(--c-danger);
+  margin-top: var(--sp-1);
+}
+
+.input,
+.select,
+.textarea {
+  width: 100%;
+  padding: 11px 13px;
+  background: var(--c-surface);
+  border: 1px solid var(--c-border-strong);
+  border-radius: var(--r-m);
+  font-size: 15px;
+  transition: border-color var(--t-fast), box-shadow var(--t-fast);
+  appearance: none;
+}
+
+.textarea {
+  min-height: 84px;
+  resize: vertical;
+}
+
+.input:focus,
+.select:focus,
+.textarea:focus {
+  outline: none;
+  border-color: var(--c-primary);
+  box-shadow: 0 0 0 3px var(--c-primary-soft);
+}
+
+.input::placeholder,
+.textarea::placeholder {
+  color: var(--c-faint);
+}
+
+.input:disabled,
+.select:disabled,
+.textarea:disabled {
+  background: var(--c-surface-3);
+  color: var(--c-faint);
+}
+
+.input--error,
+.select--error,
+.textarea--error {
+  border-color: var(--c-danger);
+}
+
+.select {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8'%3E%3Cpath d='M1 1l5 5 5-5' fill='none' stroke='%236b7688' stroke-width='1.6' stroke-linecap='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 13px center;
+  padding-right: 34px;
+}
+
+/* Чекбокс и переключатель */
+.check {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.check__input {
+  width: 20px;
+  height: 20px;
+  flex: none;
+  accent-color: var(--c-primary);
+}
+
+/* --- Прокрутка ---------------------------------------------------------- */
+
+.scroll-y {
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* --- Печать ------------------------------------------------------------- */
+
+@media print {
+  body {
+    background: #fff;
+  }
+}

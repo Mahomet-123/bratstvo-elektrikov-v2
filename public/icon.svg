@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Братство Электриков">
+  <title>Братство Электриков</title>
+  <rect width="512" height="512" rx="112" fill="#1657c4"/>
+  <path d="M96 268h84l30-92 46 176 40-118 22 34h98"
+        fill="none" stroke="#f2a20c" stroke-width="26"
+        stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M300 92 196 300h72l-24 120 128-216h-76z"
+        fill="#ffd166" opacity="0.95"/>
+</svg>

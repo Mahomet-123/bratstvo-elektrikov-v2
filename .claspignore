@@ -1,0 +1,8 @@
+# В Apps Script отправляются только исполняемые модули и манифест.
+# Данные прайса лежат в seed/price.json и попадают в проект через SeedData.gs,
+# который генерируется скриптом scripts/build-seed-data.js.
+**/**
+!appsscript.json
+!*.gs
+!*.js
+!*.html

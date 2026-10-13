@@ -1,0 +1,14 @@
+{
+  "name": "bratstvo-elektrikov-v2-backend",
+  "version": "2.0.0",
+  "private": true,
+  "description": "Тонкая обёртка: команды заливки бэкенда в Apps Script вызываются из корня репозитория",
+  "scripts": {
+    "gas:push": "npm --prefix .. run gas:push",
+    "gas:pull": "npm --prefix .. run gas:pull",
+    "gas:status": "npm --prefix .. run gas:status",
+    "gas:open": "npm --prefix .. run gas:open",
+    "gas:versions": "npm --prefix .. run gas:versions",
+    "gas:deploy": "npm --prefix .. run gas:deploy"
+  }
+}
