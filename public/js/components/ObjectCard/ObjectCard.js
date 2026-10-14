@@ -11,8 +11,8 @@
 import { h, clear } from '../../core/dom.js';
 import { loadStyles } from '../../core/styles.js';
 import { iconSvg } from '../../core/icons.js';
-import { store } from '../../core/store.js';
-import { toastSuccess, toastError, toastWarning } from '../../core/toast.js';
+import { store, invalidateObjects } from '../../core/store.js';
+import { toastSuccess, toastError } from '../../core/toast.js';
 import { confirmDialog, openModal } from '../../core/modal.js';
 import { describeError } from '../../api/apiClient.js';
 import { api } from '../../api/endpoints.js';
@@ -147,7 +147,7 @@ export function createObjectCard(props) {
           purchases.length
             ? countLabel(purchases.length, ['закупка', 'закупки', 'закупок']) + ' · ' + moneyShort(purchasesSum)
             : 'Закупок пока нет',
-          () => toastWarning('Раздел закупок с фото накладных появится на следующем этапе'))
+          () => navigate('/object/' + encodeURIComponent(object.id) + '/purchases'))
       )
     );
   }
@@ -201,7 +201,7 @@ export function createObjectCard(props) {
     );
   }
 
-  /** Управление: правка, отчёт, уборка. */
+  /** Управление: правка, кабинет, отчёт, уборка. */
   function renderManage(object) {
     const rows = [];
 
@@ -213,18 +213,31 @@ export function createObjectCard(props) {
       h('span.row__side', { html: iconSvg('edit', 20) })
     ));
 
-    if (isLeader) {
-      rows.push(h('button.row.row--tap', {
-        type: 'button',
-        onclick: () => toastWarning('Отчёт для клиента появится на следующем этапе')
-      },
-        h('span.row__main',
-          h('span.row__title', { text: 'Отчёт для клиента' }),
-          h('span.row__sub', { text: 'PDF и временная ссылка на кабинет' })
-        ),
-        h('span.row__side', { html: iconSvg('doc', 20) })
-      ));
-    }
+    rows.push(h('button.row.row--tap', {
+      type: 'button',
+      onclick: () => navigate('/cabinet/' + encodeURIComponent(object.id))
+    },
+      h('span.row__main',
+        h('span.row__title', { text: 'Кабинет клиента' }),
+        h('span.row__sub', {
+          text: object.hasCabinet
+            ? 'Ссылка открыта — клиент видит ход работ'
+            : 'Персональная ссылка на объект без входа в приложение'
+        })
+      ),
+      h('span.row__side', { html: iconSvg(object.hasCabinet ? 'eye' : 'lock', 20) })
+    ));
+
+    rows.push(h('button.row.row--tap', {
+      type: 'button',
+      onclick: () => navigate('/object/' + encodeURIComponent(object.id) + '/report')
+    },
+      h('span.row__main',
+        h('span.row__title', { text: 'Отчёт для клиента' }),
+        h('span.row__sub', { text: 'PDF, веб-страница и отправка письмом' })
+      ),
+      h('span.row__side', { html: iconSvg('doc', 20) })
+    ));
 
     // Убрать объект можно только в статусе «расчёт» — чтобы не потерять работы.
     if (isLeader && object.status === CONFIG.STATUS_CALC) {
@@ -285,6 +298,8 @@ export function createObjectCard(props) {
   async function changeStatus(status) {
     try {
       await api.objectSetStatus(id, status);
+      // Список объектов рисуется из кэша — после смены статуса он устарел.
+      invalidateObjects();
       toastSuccess('Статус изменён: ' + CONFIG.STATUS_LABEL[status]);
       await load();
     } catch (error) {
@@ -331,6 +346,8 @@ export function createObjectCard(props) {
 
     try {
       await api.objectUpdate(id, data);
+      // Название, клиент и адрес видны в списке — кэш больше не годится.
+      invalidateObjects();
       toastSuccess('Изменения сохранены');
       await load();
     } catch (error) {
@@ -350,6 +367,9 @@ export function createObjectCard(props) {
 
     try {
       const result = await api.objectRemove(id);
+      // Объекта больше нет — из кэша его надо убрать немедленно, иначе он
+      // останется в списке до ответа сервера, а без сети — до конца сессии.
+      invalidateObjects();
       toastSuccess(result.message || 'Объект убран');
       navigate('/objects', true);
     } catch (error) {

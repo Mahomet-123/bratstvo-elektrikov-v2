@@ -3,6 +3,9 @@
  * Модуль: endpoints
  * Ответственность: именованные обёртки над маршрутами API — чтобы экраны
  *                  не знали строковых имён действий и формы полезной нагрузки.
+ *                  Имена действий обязаны совпадать с таблицей маршрутов
+ *                  бэкенда (backend/Router.gs): опечатка здесь не ловится
+ *                  проверкой синтаксиса и проявляется только в бою.
  * Зависимости: api/apiClient
  * ============================================================================
  */
@@ -56,7 +59,7 @@ export const api = {
   objectUpdate: (id, data) => request('objects.update', Object.assign({ id: id }, data)),
   objectSetStatus: (id, status) => request('objects.setStatus', { id: id, status: status }),
   objectClose: (id) => request('objects.close', { id: id }),
-  objectReopen: (id) => request('objects.reopen', { id: id }),
+  objectRestore: (id) => request('objects.restore', { id: id }),
   objectRemove: (id) => request('objects.remove', { id: id }),
 
   /* --- Расчёт --- */
@@ -69,6 +72,7 @@ export const api = {
   daysList: (id) => request('days.list', { id: id }),
   daysAdd: (id, day) => request('days.add', { id: id, day: day }),
   daysRemove: (id, rowId) => request('days.remove', { id: id, rowId: rowId }),
+  daysToday: (date) => request('days.today', { date: date }),
 
   /* --- Закупки --- */
 
@@ -76,33 +80,41 @@ export const api = {
   purchasesAdd: (id, purchase) => request('purchases.add', { id: id, purchase: purchase }),
   purchasesRemove: (id, rowId) => request('purchases.remove', { id: id, rowId: rowId }),
 
-  /* --- Фотографии --- */
+  /* --- Фотографии накладных --- */
 
   photoUpload: (payload) => request('photos.upload', payload, { timeout: 90000 }),
 
-  /* --- Аналитика --- */
+  /* --- Аналитика (руководитель) --- */
 
   analyticsSummary: (options) => request('analytics.summary', options || {}),
   analyticsDays: (options) => request('analytics.days', options || {}),
 
-  /* --- Отчёт и кабинет клиента --- */
+  /* --- Отчёт клиенту --- */
 
   reportLink: (id) => request('report.link', { id: id }),
-  reportSend: (id, contact) => request('report.send', { id: id, contact: contact }),
+  reportPdf: (id) => request('report.pdf', { id: id }, { timeout: 120000 }),
+  reportSend: (id, contact) => request('report.send', { id: id, contact: contact }, { timeout: 120000 }),
 
+  /* --- Кабинет клиента --- */
+
+  cabinetGet: (id) => request('cabinet.get', { id: id }),
   cabinetLink: (id) => request('cabinet.link', { id: id }),
   cabinetRevoke: (id) => request('cabinet.revoke', { id: id }),
+  cabinetExpire: () => request('cabinet.expire'),
 
-  /* --- Архив --- */
+  /* --- Архив по годам --- */
 
   archiveList: () => request('archive.list'),
-  archiveRestore: (id) => request('archive.restore', { id: id }),
+  archiveCleanup: (archiveId) => request('archive.cleanup', { archiveId: archiveId }),
 
-  /* --- Telegram --- */
+  /* --- Уведомления в Telegram --- */
 
   botStatus: () => request('bot.status'),
-  botSaveToken: (token, chatId) => request('bot.saveToken', { token: token, chatId: chatId }),
-  botTest: () => request('bot.test')
+  botSaveToken: (botToken, chatId) => request('bot.saveToken', { botToken: botToken, chatId: chatId }),
+  botTest: () => request('bot.test'),
+  botInstall: () => request('bot.install'),
+  botRemove: () => request('bot.remove'),
+  botRemind: (date) => request('bot.remind', { date: date })
 };
 
 export default api;

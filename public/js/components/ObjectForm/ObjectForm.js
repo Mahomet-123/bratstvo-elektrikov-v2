@@ -3,7 +3,7 @@
  * Компонент: ObjectForm
  * Ответственность: форма реквизитов объекта — используется и на отдельном
  *                  экране «Новый объект», и во всплывающем окне правки.
- * Зависимости: core/dom, core/styles, core/toast, api/*
+ * Зависимости: core/dom, core/styles, core/store, core/toast, api/*
  * ============================================================================
  */
 
@@ -12,6 +12,7 @@ import { loadStyles } from '../../core/styles.js';
 import { toastError } from '../../core/toast.js';
 import { describeError } from '../../api/apiClient.js';
 import { api } from '../../api/endpoints.js';
+import { invalidateObjects } from '../../core/store.js';
 import { CONFIG } from '../../config.js';
 
 /**
@@ -165,6 +166,8 @@ export function createObjectScreen(props) {
     submitLabel: 'Создать объект',
     onSubmit: async (data) => {
       const result = await api.objectCreate(data);
+      // В списке объектов появилась новая карточка — сохранённый список устарел.
+      invalidateObjects();
       // Сразу переходим в карточку созданного объекта.
       navigate('/object/' + encodeURIComponent(result.object.id), true);
     }

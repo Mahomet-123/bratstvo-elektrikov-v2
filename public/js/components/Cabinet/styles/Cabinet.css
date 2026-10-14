@@ -1,0 +1,101 @@
+/* ==========================================================================
+   Cabinet.css — кабинет клиента
+   Ответственность: карточка объекта, состояние доступа со ссылкой,
+   кнопки копирования и закрытия доступа, пояснение для мастера.
+   ========================================================================== */
+
+.cabinet {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+}
+
+.cabinet__object-top {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  flex-wrap: wrap;
+}
+
+.cabinet__object-num {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--c-muted);
+}
+
+.cabinet__object-title {
+  font-size: 18px;
+  font-weight: 700;
+  margin-top: var(--sp-2);
+}
+
+.cabinet__object-client {
+  font-size: 14px;
+  color: var(--c-muted);
+  margin-top: 2px;
+}
+
+/* --- Состояние доступа -------------------------------------------------- */
+
+.cabinet__state .card__head {
+  align-items: center;
+}
+
+.cabinet__badge {
+  margin-left: auto;
+}
+
+.cabinet__text {
+  font-size: 14px;
+  color: var(--c-muted);
+  margin-bottom: var(--sp-3);
+}
+
+.cabinet__link {
+  font-size: 13px;
+  color: var(--c-text);
+  margin-bottom: var(--sp-3);
+}
+
+.cabinet__actions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+
+.cabinet__validity {
+  margin-top: var(--sp-3);
+  font-size: 12px;
+  color: var(--c-muted);
+}
+
+.cabinet__revoke {
+  margin-top: var(--sp-3);
+}
+
+/* --- Пояснение ---------------------------------------------------------- */
+
+.cabinet__help-title {
+  font-size: 14px;
+  font-weight: 600;
+  margin-bottom: var(--sp-2);
+}
+
+.cabinet__list {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--c-muted);
+}
+
+.cabinet__list li + li {
+  margin-top: 4px;
+}
+
+.cabinet__empty-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--c-faint);
+}

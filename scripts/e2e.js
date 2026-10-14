@@ -309,6 +309,14 @@ async function main() {
   check('ссылка на кабинет выдана', /page=cabinet/.test(cabUrl),
     cabUrl ? cabUrl.slice(0, 70) + '…' : cabLink.error);
 
+  // Отдельный маршрут чтения нужен экрану управления: он не должен попадать
+  // в журнал посещений как «открыл кабинет клиента».
+  const cabGet = await callApi('cabinet.get', { id: testObjectId }, leaderToken);
+  check('состояние кабинета читается отдельно от выдачи ссылки',
+    cabGet.ok === true && val(cabGet, 'data.enabled', false) === true &&
+    val(cabGet, 'data.url', '') === cabUrl,
+    cabGet.ok ? '' : cabGet.error);
+
   if (cabUrl) {
     const page = await fetchPage(cabUrl);
     check('страница кабинета открывается без входа', page.status === 200);

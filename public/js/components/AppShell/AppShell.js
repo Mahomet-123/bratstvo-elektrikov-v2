@@ -90,12 +90,14 @@ export function createAppShell(props) {
       { path: '/object/new', handler: () => renderScreen('/object/new', { title: 'Новый объект', back: true }) },
       { path: '/object/:id/calc', handler: (params) => renderScreen('/object/:id/calc', { title: 'Расчёт', back: true, params: params }) },
       { path: '/object/:id/days', handler: (params) => renderScreen('/object/:id/days', { title: 'Журнал дней', back: true, params: params }) },
+      { path: '/object/:id/purchases', handler: (params) => renderScreen('/object/:id/purchases', { title: 'Закупки', back: true, params: params }) },
+      { path: '/object/:id/report', handler: (params) => renderScreen('/object/:id/report', { title: 'Отчёт клиенту', back: true, params: params }) },
       { path: '/object/:id', handler: (params) => renderScreen('/object/:id', { title: 'Объект', back: true, params: params }) },
       { path: '/profile', handler: () => renderScreen('/profile', { title: 'Профиль' }) },
-      { path: '/brigade', handler: () => renderScreen('/brigade', { title: 'Бригада', back: true }) },
+      { path: '/brigade', handler: () => renderScreen('/brigade', { title: 'Бригада' }) },
       { path: '/visits', handler: () => renderScreen('/visits', { title: 'Посещения', back: true }) },
-      { path: '/analytics', handler: () => renderScreen('/analytics', { title: 'Аналитика', back: true }) },
-      { path: '/archive', handler: () => renderScreen('/archive', { title: 'Архив', back: true }) },
+      { path: '/analytics', handler: () => renderScreen('/analytics', { title: 'Аналитика' }) },
+      { path: '/archive', handler: () => renderScreen('/archive', { title: 'Архив' }) },
       { path: '/cabinet/:id', handler: (params) => renderScreen('/cabinet/:id', { title: 'Кабинет клиента', back: true, params: params }) }
     ]
   });

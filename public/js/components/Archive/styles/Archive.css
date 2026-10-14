@@ -1,0 +1,91 @@
+/* ==========================================================================
+   Archive.css — архив по годам
+   Ответственность: карточки таблиц-архивов, строки объектов внутри архива
+   и пояснение того, как архив устроен.
+   ========================================================================== */
+
+.archive {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+}
+
+.archive__stats {
+  margin-bottom: var(--sp-1);
+}
+
+.archive__item-titles {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.archive__item-sub {
+  font-size: 12px;
+  color: var(--c-muted);
+}
+
+.archive__objects {
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-m);
+  overflow: hidden;
+  background: var(--c-surface);
+}
+
+.archive__object {
+  align-items: center;
+}
+
+.archive__object-top {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  flex-wrap: wrap;
+}
+
+.archive__object-num {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--c-muted);
+}
+
+.archive__empty-text {
+  font-size: 13px;
+  color: var(--c-muted);
+  padding: var(--sp-2) 0;
+}
+
+.archive__actions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  margin-top: var(--sp-3);
+}
+
+/* --- Пояснение ---------------------------------------------------------- */
+
+.archive__help-title {
+  font-size: 14px;
+  font-weight: 600;
+  margin-bottom: var(--sp-2);
+}
+
+.archive__list {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--c-muted);
+}
+
+.archive__list li + li {
+  margin-top: 4px;
+}
+
+.archive__empty-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--c-faint);
+}

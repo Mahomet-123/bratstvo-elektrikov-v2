@@ -88,6 +88,26 @@ function cabinetPage_(params) {
 }
 
 /**
+ * Состояние кабинета без изменений — для экрана управления ссылкой.
+ * Отдельный маршрут нужен, чтобы простой просмотр ссылки не попадал
+ * в журнал посещений как «открыл кабинет клиента».
+ * @param {string} token — сессия мастера или руководителя
+ * @param {string} id — объект
+ * @return {Object} { enabled, url, object }
+ */
+function cabinetGet_(token, id) {
+  requireSession_(token);
+  const object = requireObject_(id);
+  const enabled = bool_(object['кабинет']);
+  return {
+    enabled: enabled,
+    url: enabled ? cabinetUrl_(object) : '',
+    validity: cabinetValidityText_(object),
+    object: objectView_(object)
+  };
+}
+
+/**
  * Включение кабинета и выдача ссылки. Токен при необходимости создаётся заново.
  * @param {string} token — сессия мастера или руководителя
  * @param {string} id — объект

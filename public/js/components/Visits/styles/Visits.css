@@ -1,0 +1,65 @@
+/* ==========================================================================
+   Visits.css — журнал посещений
+   Ответственность: плитки итогов, выбор глубины журнала и строки записей
+   с пометкой сбоя.
+   ========================================================================== */
+
+.visits {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+}
+
+.visits__stats {
+  margin-bottom: var(--sp-1);
+}
+
+.visits__limits {
+  margin-bottom: var(--sp-1);
+}
+
+.visits__rows {
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-l);
+  overflow: hidden;
+  background: var(--c-surface);
+}
+
+.visit {
+  align-items: flex-start;
+}
+
+.visit__top {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  flex-wrap: wrap;
+}
+
+.visit__user {
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.visit__action {
+  display: block;
+  font-size: 14px;
+  color: var(--c-text);
+  margin-top: 3px;
+  white-space: normal;
+  word-break: break-word;
+}
+
+.visit__meta {
+  display: block;
+  font-size: 12px;
+  color: var(--c-muted);
+  margin-top: 4px;
+}
+
+.visits__empty-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--c-faint);
+}

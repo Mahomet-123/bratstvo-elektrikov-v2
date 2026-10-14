@@ -14,6 +14,7 @@ import { store, loadSession, saveSession, cachePrices, readCachedPrices } from '
 import { toastError, toastWarning, toastSuccess } from './core/toast.js';
 import { describeError } from './api/apiClient.js';
 import { api } from './api/endpoints.js';
+import { start as startSync, flushManual } from './core/sync.js';
 import { createLogin } from './components/Login/Login.js';
 import { createAppShell } from './components/AppShell/AppShell.js';
 import { createProfile } from './components/Profile/Profile.js';
@@ -22,6 +23,13 @@ import { createObjectScreen } from './components/ObjectForm/ObjectForm.js';
 import { createObjectCard } from './components/ObjectCard/ObjectCard.js';
 import { createCalculator } from './components/Calculator/Calculator.js';
 import { createDaysJournal } from './components/DaysJournal/DaysJournal.js';
+import { createPurchases } from './components/Purchases/Purchases.js';
+import { createReport } from './components/Report/Report.js';
+import { createCabinet } from './components/Cabinet/Cabinet.js';
+import { createAnalytics } from './components/Analytics/Analytics.js';
+import { createArchive } from './components/Archive/Archive.js';
+import { createBrigade } from './components/Brigade/Brigade.js';
+import { createVisits } from './components/Visits/Visits.js';
 import { CONFIG } from './config.js';
 
 const root = qs('#app');
@@ -45,6 +53,12 @@ async function start() {
 
   trackConnection();
   registerServiceWorker();
+
+  // Офлайн-очередь работает независимо от входа: накопленные записи уйдут,
+  // как только появится связь.
+  startSync().catch((error) => {
+    log.warn('Очередь отправки не запустилась', error.message);
+  });
 
   const session = loadSession();
   if (session) {
@@ -87,10 +101,7 @@ function mountShell() {
       mountLogin();
     },
     onManualSend: () => {
-      // Отправка очереди подключается на этапе офлайн-очереди.
-      const count = Number(store.get().queueCount) || 0;
-      if (!count) toastSuccess('Всё отправлено — очередь пуста');
-      else toastWarning('Очередь обрабатывается автоматически при появлении сети');
+      sendQueueNow();
     }
   });
 
@@ -129,6 +140,40 @@ function mountShell() {
     onTitle: (title, subtitle) => tools.setTitle(title, subtitle)
   }));
 
+  shell.register('/object/:id/purchases', (params, tools) => createPurchases({
+    id: params.id,
+    onNavigate: go,
+    onTitle: (title, subtitle) => tools.setTitle(title, subtitle)
+  }));
+
+  shell.register('/object/:id/report', (params, tools) => createReport({
+    id: params.id,
+    onNavigate: go,
+    onTitle: (title, subtitle) => tools.setTitle(title, subtitle)
+  }));
+
+  shell.register('/cabinet/:id', (params, tools) => createCabinet({
+    id: params.id,
+    onNavigate: go,
+    onTitle: (title, subtitle) => tools.setTitle(title, subtitle)
+  }));
+
+  shell.register('/analytics', () => createAnalytics({
+    onNavigate: go
+  }));
+
+  shell.register('/archive', () => createArchive({
+    onNavigate: go
+  }));
+
+  shell.register('/brigade', () => createBrigade({
+    onNavigate: go
+  }));
+
+  shell.register('/visits', () => createVisits({
+    onNavigate: go
+  }));
+
   setContent(root, shell.el);
   shell.router.start();
 
@@ -138,6 +183,27 @@ function mountShell() {
 
   logVisit();
   warmUp();
+}
+
+/** Ручная отправка накопленных записей из индикатора в шапке. */
+async function sendQueueNow() {
+  const count = Number(store.get().queueCount) || 0;
+  if (!count) {
+    toastSuccess('Всё отправлено — очередь пуста');
+    return;
+  }
+  if (!navigator.onLine) {
+    toastWarning('Нет сети. Записи уйдут сами, как только появится связь', 5000);
+    return;
+  }
+
+  toastWarning('Отправляем ' + count + ' ' + (count === 1 ? 'запись' : 'записей') + '…');
+  const result = await flushManual();
+  const left = Number(result.left) || 0;
+
+  if (left === 0) toastSuccess('Очередь отправлена');
+  else if (result.sent > 0) toastWarning('Отправлено: ' + result.sent + ', осталось: ' + left);
+  else toastError('Не удалось отправить: ' + (result.stopped || 'проверьте связь'));
 }
 
 /** Отметить вход в журнале посещений — один раз за запуск. */

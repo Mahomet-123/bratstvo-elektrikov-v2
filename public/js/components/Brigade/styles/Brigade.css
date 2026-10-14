@@ -1,0 +1,119 @@
+/* ==========================================================================
+   Brigade.css — состав бригады и уведомления
+   Ответственность: строки людей с аватаром и кодами, блок настройки
+   Telegram-бота с состоянием и кнопками.
+   ========================================================================== */
+
+.brigade {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+}
+
+.brigade__section {
+  display: flex;
+  flex-direction: column;
+}
+
+.brigade__rows {
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-l);
+  overflow: hidden;
+  background: var(--c-surface);
+}
+
+.brigade__user {
+  align-items: center;
+}
+
+.brigade__avatar {
+  flex: none;
+  width: 38px;
+  height: 38px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--r-pill);
+  background: var(--c-primary-soft);
+  color: var(--c-primary-dark);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.brigade__flag {
+  display: block;
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--c-warning);
+}
+
+.brigade__side {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--sp-1);
+}
+
+/* --- Уведомления -------------------------------------------------------- */
+
+.brigade__bot .card__head {
+  align-items: center;
+}
+
+.brigade__bot-state {
+  font-size: 15px;
+  font-weight: 600;
+  margin-bottom: var(--sp-2);
+}
+
+.brigade__bot-hint {
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--c-muted);
+  margin-bottom: var(--sp-3);
+}
+
+.brigade__bot-actions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+
+.brigade__bot-meta {
+  margin-top: var(--sp-3);
+  font-size: 12px;
+  color: var(--c-muted);
+}
+
+.brigade__hint {
+  font-size: 13px;
+  color: var(--c-muted);
+  margin-bottom: var(--sp-3);
+}
+
+.brigade__form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+
+.brigade__empty-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--c-faint);
+}
+
+.brigade__tool-icon {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  color: var(--c-primary);
+}
+
+.brigade__chevron {
+  transform: rotate(180deg);
+  color: var(--c-faint);
+}

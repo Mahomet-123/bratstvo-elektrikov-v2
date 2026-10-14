@@ -351,6 +351,13 @@ const ROUTES_ = {
     }
   },
 
+  'cabinet.get': {
+    auth: 'user',
+    handler: function (ctx) {
+      return cabinetGet_(ctx.token, (ctx.payload || {}).id);
+    }
+  },
+
   'cabinet.revoke': {
     auth: 'user',
     handler: function (ctx) {

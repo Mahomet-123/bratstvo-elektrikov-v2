@@ -17,6 +17,7 @@ import { confirmDialog } from '../../core/modal.js';
 import { describeError } from '../../api/apiClient.js';
 import { api } from '../../api/endpoints.js';
 import { hours, dateWithWeekday, today, countLabel } from '../../core/format.js';
+import { sendNow, enqueue, isOfflineError } from '../../core/sync.js';
 import { duplicateBadge } from '../common/badges.js';
 
 /**
@@ -230,13 +231,30 @@ export function createDaysJournal(props) {
     submitBtn.disabled = true;
     submitBtn.textContent = 'Сохраняем…';
 
-    try {
-      const result = await api.daysAdd(id, {
+    const payload = {
+      objectId: id,
+      day: {
         date: dateInput.value || today(),
         hours: parsed,
         work: workInput.value.trim(),
         executor: executorInput.value.trim()
-      });
+      }
+    };
+
+    try {
+      let result = null;
+      try {
+        result = await sendNow('day', payload);
+      } catch (error) {
+        if (!isOfflineError(error)) throw error;
+        // Связи нет — запись ждёт на телефоне и уйдёт сама, когда связь вернётся.
+        await enqueue('day', payload, 'День: ' + dateWithWeekday(payload.day.date));
+        toastWarning('Нет сети — запись сохранена на телефоне и отправится сама', 6000);
+        workInput.value = '';
+        hoursInput.value = '';
+        hoursInput.focus();
+        return;
+      }
 
       if (result.duplicate) {
         toastWarning('Запись сохранена и помечена как повторная — за эту дату у этого исполнителя уже есть часы', 5000);

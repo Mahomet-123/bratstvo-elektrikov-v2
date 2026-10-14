@@ -1,0 +1,109 @@
+/* ==========================================================================
+   Analytics.css — аналитика для руководителя
+   Ответственность: вкладки, плитки итогов, строки объектов с полосой
+   освоения сметы и строки дней и мастеров.
+   ========================================================================== */
+
+.analytics {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+}
+
+.analytics__tabs,
+.analytics__periods {
+  margin-bottom: var(--sp-1);
+}
+
+.analytics__stats {
+  margin-bottom: var(--sp-2);
+}
+
+.analytics__filter {
+  display: flex;
+  align-items: center;
+}
+
+.analytics__section {
+  display: flex;
+  flex-direction: column;
+}
+
+/* --- Строки объектов ---------------------------------------------------- */
+
+.analytics__rows {
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-l);
+  overflow: hidden;
+  background: var(--c-surface);
+}
+
+.analytics__row {
+  align-items: center;
+}
+
+.analytics__row-top {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  flex-wrap: wrap;
+}
+
+.analytics__row-num {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--c-muted);
+}
+
+.analytics__row-title {
+  display: block;
+  font-size: 15px;
+  font-weight: 600;
+  margin-top: 3px;
+  white-space: normal;
+  word-break: break-word;
+}
+
+.analytics__row-client {
+  display: block;
+  font-size: 12px;
+  color: var(--c-muted);
+  margin-top: 2px;
+}
+
+.analytics__progress {
+  display: block;
+  margin-top: var(--sp-2);
+}
+
+.analytics__row-meta {
+  display: block;
+  font-size: 12px;
+  color: var(--c-muted);
+  margin-top: 5px;
+}
+
+.analytics__row-side {
+  display: flex;
+  align-items: center;
+}
+
+.analytics__row-sum {
+  font-size: 15px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+/* --- Дни и мастера ------------------------------------------------------ */
+
+.analytics__executor,
+.analytics__day {
+  align-items: center;
+}
+
+.analytics__empty-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--c-faint);
+}

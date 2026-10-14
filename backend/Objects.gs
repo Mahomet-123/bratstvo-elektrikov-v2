@@ -52,6 +52,59 @@ function objectSheetName_(number, title) {
 }
 
 /**
+ * Есть ли в листе объекта хоть какие-то данные — кроме строк-маркеров
+ * и шапок блоков.
+ * @param {Sheet} sh
+ * @return {boolean}
+ */
+function objectSheetHasData_(sh) {
+  if (!sh) return false;
+  const blocks = parseBlocks_(sh.getName());
+  return Object.keys(blocks).some(function (key) {
+    const block = blocks[key];
+    return Boolean(block && block.headerRow && block.lastRow >= block.firstRow);
+  });
+}
+
+/**
+ * Свободное имя листа для нового объекта.
+ *
+ * Номер объекта берётся как «наибольший + 1», поэтому после уборки последнего
+ * объекта номер, а вместе с ним и имя листа, выдаются заново. Имя при этом
+ * может совпасть с листом, оставшимся от прежнего объекта: например, если
+ * объект убирали, когда Диск был недоступен, и лист не уехал в корзину.
+ *
+ * Подставлять новый объект к такому листу нельзя: он молча получил бы чужие
+ * часы, закупки и смету. Поэтому чужой лист не трогаем, а новому подбираем
+ * свободное имя — «005_Коттедж (2)» и так далее.
+ *
+ * @param {number} number
+ * @param {string} title
+ * @return {string}
+ */
+function uniqueObjectSheetName_(number, title) {
+  const ss = ss_();
+  const base = objectSheetName_(number, title);
+
+  const existing = ss.getSheetByName(base);
+  // Листа нет — имя свободно. Лист есть, но пустой — им можно пользоваться.
+  if (!existing || !objectSheetHasData_(existing)) return base;
+
+  let index = 2;
+  let candidate = base + ' (' + index + ')';
+  while (ss.getSheetByName(candidate)) {
+    index++;
+    candidate = base + ' (' + index + ')';
+  }
+
+  logError_('Objects.uniqueObjectSheetName_', 'Имя листа занято листом с данными — новому объекту выдано другое имя', {
+    занято: base,
+    выдано: candidate
+  });
+  return candidate;
+}
+
+/**
  * Создание листа объекта с тремя пустыми блоками.
  * @param {string} sheetName
  * @return {Sheet}
@@ -60,6 +113,13 @@ function createObjectSheet_(sheetName) {
   const ss = ss_();
   let sh = ss.getSheetByName(sheetName);
   if (!sh) sh = ss.insertSheet(sheetName);
+
+  // Защита от повторения старой беды: если лист с таким именем уже содержал
+  // данные, значит имя подобрано неверно, и новый объект увидел бы чужие
+  // записи. Это не повод падать — просто оставляем след в журнале ошибок.
+  if (objectSheetHasData_(sh)) {
+    logError_('Objects.createObjectSheet_', 'Лист объекта с данными переиспользован', { лист: sheetName });
+  }
 
   objectBlockOrder_().forEach(function (block) {
     ensureBlock_(sheetName, block, OBJECT_HEADERS[block]);
@@ -326,7 +386,9 @@ function createObject_(token, data) {
 
   return withLock_(function () {
     const number = nextObjectNumber_();
-    const sheetName = objectSheetName_(number, title);
+    // Имя листа подбираем до записи в реестр: оно может быть занято листом,
+    // оставшимся от прежде убранного объекта, и тогда возьмём свободное.
+    const sheetName = uniqueObjectSheetName_(number, title);
     const id = uid_('O');
     const stamp = nowIso_();
     const status = [CONFIG.STATUS_CALC, CONFIG.STATUS_WORK].indexOf(str_(d.status)) !== -1

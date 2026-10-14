@@ -1,0 +1,95 @@
+/* ==========================================================================
+   Report.css — отчёт клиенту
+   Ответственность: карточка объекта, итоги, список действий отчёта,
+   поля со ссылками для копирования и напоминание про закрытый кабинет.
+   ========================================================================== */
+
+.report {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+}
+
+.report__object-top {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  flex-wrap: wrap;
+}
+
+.report__object-num {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--c-muted);
+}
+
+.report__object-title {
+  font-size: 18px;
+  font-weight: 700;
+  margin-top: var(--sp-2);
+}
+
+.report__object-meta {
+  font-size: 13px;
+  color: var(--c-muted);
+  margin-top: 4px;
+  white-space: normal;
+}
+
+/* --- Действия ----------------------------------------------------------- */
+
+.report__action {
+  align-items: center;
+}
+
+.report__action[disabled] {
+  opacity: .55;
+}
+
+.report__action-icon {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  color: var(--c-primary);
+}
+
+.report__chevron {
+  transform: rotate(180deg);
+  color: var(--c-faint);
+}
+
+/* --- Ссылки ------------------------------------------------------------- */
+
+.report__link {
+  font-size: 13px;
+  color: var(--c-text);
+  margin-bottom: var(--sp-2);
+}
+
+.report__field-gap {
+  margin-top: var(--sp-4);
+}
+
+/* --- Напоминание -------------------------------------------------------- */
+
+.report__notice-title {
+  font-size: 15px;
+  font-weight: 600;
+  margin-bottom: var(--sp-2);
+}
+
+.report__notice-text {
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--c-muted);
+  margin-bottom: var(--sp-3);
+}
+
+.report__empty-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--c-faint);
+}

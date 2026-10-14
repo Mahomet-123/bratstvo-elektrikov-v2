@@ -261,8 +261,14 @@ function replaceTable_(name, header, rows) {
  * Разбор листа объекта: находит строки-маркеры блоков и заголовки внутри них.
  * Структура листа:
  *   [маркер блока]  [заголовок блока]  [данные…]  (пустая строка)  [следующий блок]
+ *
+ * Кроме границ блока возвращает `limitRow` — строку маркера следующего блока.
+ * Она нужна записи: между блоками зарезервирована всего одна пустая строка,
+ * поэтому блок с данными обязан заранее освободить себе место, иначе вторая
+ * строка расчёта затрёт маркер блока «ДЕНЬ».
+ *
  * @param {string} sheetName
- * @return {Object} карта: имя блока → {markerRow, headerRow, header, firstRow, lastRow}
+ * @return {Object} карта: имя блока → {markerRow, headerRow, header, firstRow, lastRow, limitRow}
  */
 function parseBlocks_(sheetName) {
   const sh = sheetByName_(sheetName);
@@ -288,9 +294,17 @@ function parseBlocks_(sheetName) {
   marks.forEach(function (mark, i) {
     const next = marks[i + 1];
     const stopIndex = next ? next.index : values.length;
+    const limitRow = next ? next.markerRow : 0;
     const headerIndex = mark.index + 1;
     if (headerIndex >= stopIndex) {
-      blocks[mark.name] = { markerRow: mark.markerRow, headerRow: 0, header: [], firstRow: 0, lastRow: 0 };
+      blocks[mark.name] = {
+        markerRow: mark.markerRow,
+        headerRow: 0,
+        header: [],
+        firstRow: 0,
+        lastRow: 0,
+        limitRow: limitRow
+      };
       return;
     }
     const header = values[headerIndex].map(str_);
@@ -306,7 +320,8 @@ function parseBlocks_(sheetName) {
       headerRow: headerIndex + 1,
       header: header,
       firstRow: headerIndex + 2,
-      lastRow: endIndex + 1
+      lastRow: endIndex + 1,
+      limitRow: limitRow
     };
   });
   return blocks;
@@ -369,7 +384,18 @@ function ensureBlock_(sheetName, blockName, header) {
   if (!sh) sh = ss.insertSheet(sheetName);
 
   const blocks = parseBlocks_(sheetName);
-  if (blocks[blockName]) return blocks[blockName];
+  const existing = blocks[blockName];
+  if (existing && existing.headerRow) return existing;
+
+  // Маркер есть, а шапки за ним нет — так выглядит лист, испорченный прежней
+  // версией приложения (данные затирали шапку следующего блока). Дописываем
+  // шапку, вставив строку: сразу за маркером может стоять маркер другого блока.
+  if (existing) {
+    sh.insertRowBefore(existing.markerRow + 1);
+    sh.getRange(existing.markerRow + 1, 1, 1, header.length).setValues([header])
+      .setFontWeight('bold').setBackground('#eef2f7');
+    return parseBlocks_(sheetName)[blockName];
+  }
 
   const lastRow = sh.getLastRow();
   const startRow = lastRow === 0 ? 1 : lastRow + 2;
@@ -377,6 +403,38 @@ function ensureBlock_(sheetName, blockName, header) {
   sh.getRange(startRow, 1).setValue(blockName).setFontWeight('bold').setBackground('#dfe7f1');
   sh.getRange(startRow + 1, 1, 1, header.length).setValues([header])
     .setFontWeight('bold').setBackground('#eef2f7');
+  return parseBlocks_(sheetName)[blockName];
+}
+
+/**
+ * Освободить место под строки данных блока.
+ *
+ * Между блоками зарезервирована ровно одна пустая строка. Блок растёт и
+ * упирается в маркер следующего блока: без этой проверки вторая строка
+ * расчёта затирает маркер блока «ДЕНЬ», и журнал дней перестаёт читаться.
+ * Здесь мы заранее вставляем недостающие строки, чтобы данные одного блока
+ * никогда не попадали в чужую шапку.
+ *
+ * @param {string} sheetName
+ * @param {string} blockName
+ * @param {number} rows — сколько строк данных должно поместиться
+ * @return {Object} описание блока после вставки
+ */
+function ensureBlockSpace_(sheetName, blockName, rows) {
+  if (!(rows > 0)) return parseBlocks_(sheetName)[blockName];
+
+  const sh = sheetByName_(sheetName);
+  const block = parseBlocks_(sheetName)[blockName];
+  if (!block || !block.headerRow) return block;
+
+  // Последний блок листа сверху ничем не ограничен — место ему не нужно.
+  if (!block.limitRow) return block;
+
+  const capacity = Math.max(0, block.limitRow - block.firstRow);
+  const missing = rows - capacity;
+  if (missing <= 0) return block;
+
+  sh.insertRowsBefore(block.limitRow, missing);
   return parseBlocks_(sheetName)[blockName];
 }
 
@@ -391,6 +449,10 @@ function ensureBlock_(sheetName, blockName, header) {
 function appendBlockRow_(sheetName, blockName, header, obj) {
   const sh = sheetByName_(sheetName);
   let block = ensureBlock_(sheetName, blockName, header);
+
+  const used = Math.max(0, block.lastRow - block.firstRow + 1);
+  block = ensureBlockSpace_(sheetName, blockName, used + 1);
+
   let target = block.lastRow >= block.firstRow ? block.lastRow + 1 : block.firstRow;
 
   // Разметка могла слипнуться (лист создан старой версией приложения):
@@ -416,6 +478,10 @@ function replaceBlock_(sheetName, blockName, header, objs) {
   const sh = sheetByName_(sheetName);
   let block = ensureBlock_(sheetName, blockName, header);
   const values = (objs || []).map(function (o) { return toRowValues_(header, o); });
+
+  // Место под новые данные освобождаем до записи: иначе они уйдут в шапку
+  // следующего блока.
+  block = ensureBlockSpace_(sheetName, blockName, values.length);
 
   if (values.length && isMarkerRow_(sh, block.firstRow)) {
     sh.insertRowBefore(block.firstRow);

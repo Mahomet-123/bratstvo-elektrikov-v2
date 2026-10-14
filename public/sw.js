@@ -9,7 +9,7 @@
  * ============================================================================
  */
 
-const VERSION = 'v2.0.3';
+const VERSION = 'v2.2.0';
 const CACHE_STATIC = 'be-static-' + VERSION;
 const CACHE_RUNTIME = 'be-runtime-' + VERSION;
 
@@ -19,6 +19,9 @@ const PRECACHE = [
   './index.html',
   './manifest.webmanifest',
   './icon.svg',
+  './icons/icon-192.png',
+  './icons/icon-512.png',
+  './icons/icon-maskable-512.png',
   './css/base.css',
   './css/components.css',
   './css/layout.css',
@@ -34,6 +37,9 @@ const PRECACHE = [
   './js/core/styles.js',
   './js/core/toast.js',
   './js/core/estimate.js',
+  './js/core/queue.js',
+  './js/core/sync.js',
+  './js/core/clipboard.js',
   './js/api/apiClient.js',
   './js/api/endpoints.js',
   './js/components/common/badges.js',
@@ -55,7 +61,23 @@ const PRECACHE = [
   './js/components/Calculator/CalcPicker.js',
   './js/components/Calculator/styles/Calculator.css',
   './js/components/DaysJournal/DaysJournal.js',
-  './js/components/DaysJournal/styles/DaysJournal.css'
+  './js/components/DaysJournal/styles/DaysJournal.css',
+  './js/components/Purchases/Purchases.js',
+  './js/components/Purchases/styles/Purchases.css',
+  './js/components/PhotoUploader/PhotoUploader.js',
+  './js/components/PhotoUploader/styles/PhotoUploader.css',
+  './js/components/Report/Report.js',
+  './js/components/Report/styles/Report.css',
+  './js/components/Cabinet/Cabinet.js',
+  './js/components/Cabinet/styles/Cabinet.css',
+  './js/components/Analytics/Analytics.js',
+  './js/components/Analytics/styles/Analytics.css',
+  './js/components/Archive/Archive.js',
+  './js/components/Archive/styles/Archive.css',
+  './js/components/Brigade/Brigade.js',
+  './js/components/Brigade/styles/Brigade.css',
+  './js/components/Visits/Visits.js',
+  './js/components/Visits/styles/Visits.css'
 ];
 
 /** Адреса API — их кэшировать нельзя ни в каком виде. */
