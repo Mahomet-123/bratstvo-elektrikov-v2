@@ -76,6 +76,28 @@ async function callApiOnce(action, payload, token) {
 }
 
 /**
+ * Коды отказа, которые означают ответ приложения по существу, а не помеху связи.
+ * Их повторять бессмысленно: «нет прав» или «неверные данные» повторится так же.
+ */
+const MEANINGFUL_CODES = ['AUTH', 'FORBIDDEN', 'VALIDATION', 'NOT_FOUND'];
+
+/**
+ * Стоит ли повторить запрос.
+ * Повторяем сетевые обрывы, неразобранные ответы и отказы без внятного кода:
+ * на длинных прогонах Google отвечает так просто от усталости, и это не имеет
+ * отношения к логике приложения. Осмысленный отказ возвращаем сразу — иначе
+ * проверка «мастеру закрыт раздел» ждала бы впустую три попытки.
+ * @param {Object|null} response
+ * @return {boolean}
+ */
+function shouldRetry(response) {
+  if (!response) return true;
+  if (response.raw !== undefined) return true;
+  if (response.ok) return false;
+  return MEANINGFUL_CODES.indexOf(String(response.code || '')) === -1;
+}
+
+/**
  * Запрос к API с повтором.
  * Помимо сетевых обрывов повторяем случай, когда Google отдал не JSON:
  * на длинных прогонах это случается и не связано с логикой приложения.
@@ -92,10 +114,10 @@ async function callApi(action, payload, token, attempts) {
   for (let i = 0; i < total; i++) {
     try {
       last = await callApiOnce(action, payload, token);
-      if (!last || last.raw === undefined) return last;
     } catch (err) {
       last = { ok: false, error: err.message };
     }
+    if (!shouldRetry(last)) return last;
     if (i < total - 1) await new Promise((r) => setTimeout(r, 1200 * (i + 1)));
   }
   return last;

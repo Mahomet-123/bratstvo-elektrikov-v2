@@ -23,12 +23,18 @@ const os = require('os');
 const path = require('path');
 const { spawn } = require('child_process');
 const puppeteer = require('puppeteer-core');
+const { callApi } = require('./api.js');
 
 const PORT = Number(process.env.PORT || 4174);
 const BASE = 'http://localhost:' + PORT + '/';
 const CHROME = process.env.CHROME_PATH || 'C:/Program Files/Google/Chrome/Application/chrome.exe';
 
 const OBJECT_TITLE = 'ПРОВЕРКА ИНТЕРФЕЙСА';
+
+// Идентификатор созданного объекта — чтобы убрать его, даже если прогон
+// прервался на середине. Иначе брошенный объект останется в таблице
+// и следующий запуск начнёт не с чистого листа.
+let createdObjectId = '';
 
 const results = [];
 const consoleErrors = [];
@@ -132,6 +138,29 @@ async function waitForAny(page, selectors, timeout) {
     await sleep(200);
   }
   return '';
+}
+
+/**
+ * Если экран показал ошибку загрузки — нажать «Повторить».
+ *
+ * Google изредка отвечает отказом на ровном месте (холодный старт, усталость
+ * на длинном прогоне). Экран это честно показывает и предлагает «Повторить» —
+ * нажимаем, как сделал бы человек. Настоящая поломка экрана так не спрячется:
+ * повтор не поможет, и проверка упадёт.
+ *
+ * @return {Promise<boolean>} был ли повтор
+ */
+async function retryIfFailed(page, rootSelector, retryText) {
+  const failed = await page.evaluate((sel) => {
+    const root = document.querySelector(sel);
+    return Boolean(root && root.querySelector('.empty'));
+  }, rootSelector);
+  if (!failed) return false;
+
+  console.log('  экран показал ошибку загрузки — нажимаем «' + retryText + '»');
+  await clickByText(page, rootSelector + ' .empty .btn', retryText).catch(() => {});
+  await sleep(2000);
+  return true;
 }
 
 /** Текст последнего уведомления — чтобы сбой объяснял сам себя. */
@@ -410,6 +439,7 @@ async function main() {
       return parts[2] || '';
     });
     check('идентификатор объекта получен из адреса', Boolean(objectId), objectId);
+    createdObjectId = objectId;
 
     console.log('\n=== 3. Расчёт ===');
     await clickByText(page, '.object-card-screen__section .row', 'Расчёт стоимости');
@@ -552,7 +582,8 @@ async function main() {
     console.log('\n=== 6. Кабинет клиента ===');
     await page.goto(BASE + '#/cabinet/' + objectId, { waitUntil: 'domcontentloaded' });
     await page.waitForSelector('.cabinet', { timeout: 15000 });
-    const openedByDefault = await waitFor(page, '.cabinet__state--open', 15000);
+    await retryIfFailed(page, '.cabinet', 'Повторить');
+    const openedByDefault = await waitFor(page, '.cabinet__state--open', 20000);
     check('кабинет нового объекта открыт', openedByDefault);
 
     const cabinetLink = await page.$eval('.cabinet__link', (node) => node.value).catch(() => '');
@@ -604,7 +635,8 @@ async function main() {
     await page.waitForSelector('.report', { timeout: 15000 });
     check('экран отчёта открыт', true);
 
-    const linksShown = await waitFor(page, '.report__links', 15000);
+    await retryIfFailed(page, '.report', 'Повторить');
+    const linksShown = await waitFor(page, '.report__links', 20000);
     check('ссылки для клиента доступны (кабинет открыт)', linksShown);
 
     await clickByText(page, '.report__actions .row', 'Скачать PDF');
@@ -743,12 +775,30 @@ async function main() {
     await goTo(page, '#/objects', '.objects', 20000);
     const gone = await waitUntilObjectGone(page, objectNumber, 30000);
     check('убранного объекта нет в списке', gone);
+    if (gone) createdObjectId = '';
 
     console.log('\n=== 14. Ошибки консоли ===');
     const meaningful = consoleErrors.filter((line) => line.indexOf('sw.js') === -1);
     check('в консоли браузера нет ошибок', meaningful.length === 0,
       meaningful.length ? meaningful.slice(0, 3).join(' | ') : 'чисто');
   } finally {
+    // Прогон мог прерваться до уборки — тогда тестовый объект останется
+    // в таблице и следующий запуск начнётся не с чистого листа. Убираем его
+    // тем же безопасным способом: лист уезжает в таблицу-корзину на Диске.
+    if (createdObjectId) {
+      try {
+        const login = await callApi('auth.login', { name: 'Руководитель', code: '0000' });
+        if (login && login.ok) {
+          const res = await callApi('objects.remove', { id: createdObjectId }, login.data.token);
+          console.log('\nТестовый объект убран после прерванного прогона: ' +
+            (res && res.ok ? 'ок' : 'не удалось — ' + (res && res.error)));
+        } else {
+          console.log('\nТестовый объект остался в таблице: не удалось войти для уборки');
+        }
+      } catch (error) {
+        console.log('\nТестовый объект остался в таблице: ' + error.message);
+      }
+    }
     await browser.close();
     server.kill();
     try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch (error) { /* не критично */ }
