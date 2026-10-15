@@ -195,7 +195,15 @@
   padding: 0 var(--sp-1);
 }
 
-/* --- Нижняя навигация --------------------------------------------------- */
+/* --- Навигация ----------------------------------------------------------
+ *
+ * На телефоне навигация стоит внизу — до неё удобно дотянуться большим
+ * пальцем. На широких экранах те же самые кнопки живут в верхней шапке:
+ * внизу они выглядели островком посреди пустого места.
+ *
+ * Разметка одна и та же — меняется только положение. Поэтому навигация
+ * лежит внутри шапки, а здесь лишь уводится вниз на узких экранах.
+ * ---------------------------------------------------------------------- */
 
 .app-nav {
   position: fixed;
@@ -247,7 +255,7 @@
 
 /* --- Планшет и шире ----------------------------------------------------- */
 
-@media (min-width: 720px) {
+@media (min-width: 768px) {
   .app-header {
     padding-left: var(--sp-6);
     padding-right: var(--sp-6);
@@ -264,21 +272,68 @@
     padding-right: 0;
   }
 
+  /* Навигация возвращается в шапку и становится горизонтальной. */
   .app-nav {
-    position: sticky;
-    bottom: 0;
-    max-width: 720px;
-    margin: 0 auto;
-    border-left: 1px solid var(--c-border);
-    border-right: 1px solid var(--c-border);
-    border-radius: var(--r-l) var(--r-l) 0 0;
+    position: static;
+    height: auto;
+    padding-bottom: 0;
+    align-items: center;
+    gap: 2px;
+    background: transparent;
+    border-top: none;
   }
 
+  .app-nav__item {
+    flex: none;
+    flex-direction: row;
+    gap: 8px;
+    min-height: 40px;
+    padding: 8px 12px;
+    border-radius: var(--r-m);
+    font-size: 14px;
+    transition: background var(--t-fast), color var(--t-fast);
+  }
+
+  .app-nav__item--active {
+    background: var(--c-primary-soft);
+  }
+
+  .app-nav__icon {
+    width: 18px;
+    height: 18px;
+  }
+
+  /* Внизу навигации больше нет — отступ под неё не нужен. */
   .app-main {
     padding-bottom: var(--sp-4);
   }
 
   .toasts {
     bottom: var(--sp-6);
+  }
+}
+
+/*
+ * Средние экраны (планшет): шапке тесно — в ней и заголовок, и навигация,
+ * и состояние обмена. Уплотняем: подписи навигации мельче, у свежести данных
+ * остаётся только значок (подробности — в подсказке и в профиле).
+ */
+@media (min-width: 768px) and (max-width: 1023px) {
+  .app-header {
+    gap: var(--sp-2);
+  }
+
+  .app-nav__item {
+    gap: 6px;
+    padding: 8px;
+    font-size: 13px;
+  }
+
+  .sync {
+    padding: 0 8px;
+  }
+
+  .sync--data .sync__text {
+    display: none;
   }
 }

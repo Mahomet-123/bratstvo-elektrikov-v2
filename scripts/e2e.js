@@ -89,7 +89,32 @@ async function main() {
 
     const forbiddenSetup = await callApi('setup.init', {}, masterToken);
     check('мастеру закрыта инициализация', forbiddenSetup.ok === false && forbiddenSetup.code === 'FORBIDDEN');
+
+    // Пакет данных собирается теми же функциями, что и отдельные маршруты,
+    // поэтому проверяем: мастеру в пакет не попадают чужие разделы.
+    const masterBundle = await callApi('data.bundle', {}, masterToken);
+    check('мастеру выдан пакет данных',
+      masterBundle.ok === true && Array.isArray(val(masterBundle, 'data.objects', null)),
+      masterBundle.ok ? 'объектов: ' + val(masterBundle, 'data.objects', []).length : masterBundle.error);
+    check('в пакет мастера не попадают разделы руководителя',
+      val(masterBundle, 'data.analytics', null) === null &&
+      val(masterBundle, 'data.users', null) === null &&
+      val(masterBundle, 'data.visits', null) === null &&
+      val(masterBundle, 'data.archives', null) === null);
   }
+
+  console.log('\n=== 2.1 Пакет данных разделов ===');
+  const leaderBundle = await callApi('data.bundle', {}, leaderToken);
+  check('пакет данных получен', leaderBundle.ok === true, leaderBundle.ok ? '' : leaderBundle.error);
+  check('в пакете есть объекты', Array.isArray(val(leaderBundle, 'data.objects', null)));
+  check('в пакете есть аналитика', val(leaderBundle, 'data.analytics', null) !== null);
+  check('в пакете есть состав бригады', val(leaderBundle, 'data.users.total', 0) > 0,
+    'человек: ' + val(leaderBundle, 'data.users.total', 0));
+  check('в пакете есть состояние уведомлений', val(leaderBundle, 'data.bot', null) !== null);
+  check('в пакете есть архив', val(leaderBundle, 'data.archives', null) !== null);
+  check('в пакете есть журнал посещений', val(leaderBundle, 'data.visits.list.visits', null) !== null);
+  check('в пакет не попал прайс (он хранится отдельно)',
+    val(leaderBundle, 'data.prices', null) === null);
 
   console.log('\n=== 3. Миграция схемы таблицы ===');
   const init = await callApi('setup.init', {}, leaderToken);

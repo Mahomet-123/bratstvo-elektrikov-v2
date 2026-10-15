@@ -12,7 +12,7 @@ import { loadStyles } from '../../core/styles.js';
 import { toastError } from '../../core/toast.js';
 import { describeError } from '../../api/apiClient.js';
 import { api } from '../../api/endpoints.js';
-import { invalidateObjects } from '../../core/store.js';
+import bundle from '../../core/bundle.js';
 import { CONFIG } from '../../config.js';
 
 /**
@@ -166,8 +166,8 @@ export function createObjectScreen(props) {
     submitLabel: 'Создать объект',
     onSubmit: async (data) => {
       const result = await api.objectCreate(data);
-      // В списке объектов появилась новая карточка — сохранённый список устарел.
-      invalidateObjects();
+      // В списке объектов появилась новая карточка — обновляем пакет данных.
+      bundle.refresh();
       // Сразу переходим в карточку созданного объекта.
       navigate('/object/' + encodeURIComponent(result.object.id), true);
     }

@@ -19,6 +19,10 @@ export const api = {
   setupStatus: () => request('setup.status'),
   setupInit: () => request('setup.init'),
 
+  /* --- Пакет данных разделов --- */
+  // Один запрос вместо пяти: объекты, аналитика, бригада, посещения, архив.
+  dataBundle: (options) => request('data.bundle', options || {}, { timeout: 60000 }),
+
   /* --- Вход и профиль --- */
 
   login: (name, code) => request('auth.login', { name: name, code: code }, { token: '' }),

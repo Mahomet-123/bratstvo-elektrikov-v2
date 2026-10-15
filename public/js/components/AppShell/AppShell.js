@@ -36,30 +36,9 @@ export function createAppShell(props) {
   /** Текущий смонтированный экран (для корректного освобождения ресурсов). */
   let mounted = null;
 
-  /* --- Верхняя панель --- */
-
-  const backBtn = h('button.app-header__back.hidden', {
-    type: 'button',
-    'aria-label': 'Назад',
-    onclick: () => window.history.back()
-  }, h('span', { html: iconSvg('back', 22) }));
-
-  const titleNode = h('div.app-header__title', { text: CONFIG.APP_NAME });
-  const subNode = h('div.app-header__sub', { text: '' });
-
-  const syncIndicator = createSyncIndicator({ onTap: options.onManualSend });
-
-  const header = h('header.app-header',
-    backBtn,
-    h('div.app-header__titles', titleNode, subNode),
-    h('div.app-header__actions', syncIndicator.el)
-  );
-
-  /* --- Область экрана --- */
-
-  const main = h('main.app-main.shell__main');
-
-  /* --- Нижняя навигация --- */
+  /* --- Пункты навигации --- */
+  // Навигацию собираем до шапки: на широких экранах она живёт прямо в шапке,
+  // а на телефоне те же самые кнопки уезжают вниз экрана средствами стилей.
 
   const navItems = [
     { path: '/objects', label: 'Объекты', icon: 'objects' },
@@ -72,6 +51,8 @@ export function createAppShell(props) {
     const button = h('button.app-nav__item', {
       type: 'button',
       dataset: { path: item.path },
+      // Подпись нужна и как подсказка: на средних экранах остаётся только значок.
+      title: item.label,
       onclick: () => router.go(item.path)
     },
       h('span.app-nav__icon', { html: iconSvg(item.icon, 22) }),
@@ -81,6 +62,33 @@ export function createAppShell(props) {
   });
 
   const nav = h('nav.app-nav', { 'aria-label': 'Основные разделы' }, navButtons);
+
+  /* --- Верхняя панель --- */
+
+  const backBtn = h('button.app-header__back.hidden', {
+    type: 'button',
+    'aria-label': 'Назад',
+    onclick: () => window.history.back()
+  }, h('span', { html: iconSvg('back', 22) }));
+
+  const titleNode = h('div.app-header__title', { text: CONFIG.APP_NAME });
+  const subNode = h('div.app-header__sub', { text: '' });
+
+  const syncIndicator = createSyncIndicator({
+    onTap: options.onManualSend,
+    onRefresh: options.onRefreshData
+  });
+
+  const header = h('header.app-header',
+    backBtn,
+    h('div.app-header__titles', titleNode, subNode),
+    nav,
+    h('div.app-header__actions', syncIndicator.el)
+  );
+
+  /* --- Область экрана --- */
+
+  const main = h('main.app-main.shell__main');
 
   /* --- Роутер --- */
 
@@ -104,7 +112,8 @@ export function createAppShell(props) {
 
   /* --- Сборка --- */
 
-  const el = h('div.shell', header, main, nav);
+  // Навигация — часть шапки: на телефоне стили уводят её вниз экрана.
+  const el = h('div.shell', header, main);
 
   /**
    * Регистрация экрана.

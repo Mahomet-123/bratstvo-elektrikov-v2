@@ -162,7 +162,14 @@ export function createLogin(props) {
   // Подключение стилей и фоновые проверки.
   loadStyles('js/components/Login/styles/Login.css');
   checkConnection();
-  setTimeout(() => nameInput.focus(), 120);
+
+  // Ставим курсор в поле имени, но только если человек ещё ничего не выбрал.
+  // Безусловный focus() через мгновение после показа экрана мог увести
+  // курсор из поля кода прямо во время ввода — код оставался недобранным.
+  setTimeout(() => {
+    const active = document.activeElement;
+    if (!active || active === document.body) nameInput.focus();
+  }, 120);
 
   return { el };
 }

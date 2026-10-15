@@ -75,14 +75,19 @@
 }
 
 .profile__status-label {
+  flex: none;
   font-size: 14px;
   color: var(--c-muted);
 }
 
 .profile__status-value {
+  min-width: 0;
   font-size: 14px;
   font-weight: 500;
   text-align: right;
+  /* Текст ошибки приходит с сервера и может быть длинным: переносим его,
+     а не выпускаем за край экрана. */
+  overflow-wrap: anywhere;
 }
 
 .profile__about {

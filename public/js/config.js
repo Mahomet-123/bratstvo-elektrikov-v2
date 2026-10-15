@@ -25,6 +25,8 @@ export const CONFIG = {
     PRICES_AT: 'be.pricesAt',
     OBJECTS: 'be.objects',
     OBJECTS_AT: 'be.objectsAt',
+    BUNDLE: 'be.bundle',
+    BUNDLE_AT: 'be.bundleAt',
     DRAFT_CALC: 'be.draftCalc'
   },
 
@@ -40,7 +42,9 @@ export const CONFIG = {
   /* Кэш данных */
   CACHE: {
     PRICES_TTL_MIN: 12 * 60,   // прайс обновляем раз в 12 часов
-    OBJECTS_TTL_MIN: 5         // список объектов — раз в 5 минут
+    // Пакет данных разделов (объекты, аналитика, бригада, посещения, архив).
+    // Свежее этого срока экраны берут из памяти и в сеть не ходят.
+    BUNDLE_TTL_MIN: 5
   },
 
   /* Фото накладных */

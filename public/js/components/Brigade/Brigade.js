@@ -12,6 +12,7 @@
 import { h, clear } from '../../core/dom.js';
 import { loadStyles } from '../../core/styles.js';
 import { iconSvg } from '../../core/icons.js';
+import bundle from '../../core/bundle.js';
 import { toastSuccess, toastError, toastWarning } from '../../core/toast.js';
 import { confirmDialog, openModal } from '../../core/modal.js';
 import { describeError } from '../../api/apiClient.js';
@@ -222,31 +223,56 @@ export function createBrigade(props) {
    * Действия
    * ------------------------------------------------------------------------ */
 
-  /** Загрузка состава бригады. */
+  /** Заголовок экрана с числом людей. */
+  function applyTitle() {
+    if (typeof options.onTitle === 'function') {
+      options.onTitle('Бригада', countLabel((users && users.total) || 0, ['человек', 'человека', 'человек']));
+    }
+  }
+
+  /**
+   * Загрузка состава бригады.
+   * Состав уже лежит в пакете данных — экран открывается мгновенно,
+   * отдельный запрос не нужен.
+   */
   async function loadUsers() {
-    loading = true;
-    render();
-    try {
-      users = await api.usersList();
+    const packed = bundle.get();
+    if (packed && packed.users) {
+      users = packed.users;
       loading = false;
+      applyTitle();
       render();
-      if (typeof options.onTitle === 'function') {
-        options.onTitle('Бригада', countLabel((users && users.total) || 0, ['человек', 'человека', 'человек']));
-      }
+    }
+
+    const hadData = Boolean(users);
+    loading = !hadData;
+    if (!hadData) render();
+
+    try {
+      const fresh = await bundle.ensure();
+      users = (fresh && fresh.users) || users || { leader: [], masters: [], total: 0 };
+      loading = false;
+      applyTitle();
+      render();
     } catch (error) {
       loading = false;
-      users = { leader: [], masters: [], total: 0 };
+      if (!users) users = { leader: [], masters: [], total: 0 };
       render();
-      toastError(describeError(error));
+      // Состав уже показан — обновление не удалось молча.
+      if (!hadData) toastError(describeError(error));
     }
   }
 
   /** Загрузка состояния уведомлений. */
   async function loadBot() {
+    const packed = bundle.get();
+    if (packed && packed.bot) bot = packed.bot;
+
     try {
-      bot = await api.botStatus();
+      const fresh = await bundle.ensure();
+      if (fresh && fresh.bot) bot = fresh.bot;
     } catch (error) {
-      bot = null;
+      // Настройки уведомлений не критичны — показываем то, что есть.
     }
     render();
   }

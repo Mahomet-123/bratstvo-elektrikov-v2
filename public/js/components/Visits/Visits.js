@@ -12,6 +12,7 @@
 import { h, clear } from '../../core/dom.js';
 import { loadStyles } from '../../core/styles.js';
 import { iconSvg } from '../../core/icons.js';
+import bundle from '../../core/bundle.js';
 import { toastError } from '../../core/toast.js';
 import { describeError } from '../../api/apiClient.js';
 import { api } from '../../api/endpoints.js';
@@ -19,6 +20,9 @@ import { dateShort, countLabel } from '../../core/format.js';
 
 /** Сколько записей показывать. */
 const LIMITS = [50, 150, 400];
+
+/** Объём по умолчанию — ровно он лежит в пакете данных разделов. */
+const DEFAULT_LIMIT = LIMITS[1];
 
 /**
  * Создание экрана журнала посещений.
@@ -32,7 +36,7 @@ export function createVisits(props) {
 
   let data = null;
   let summary = null;
-  let limit = 150;
+  let limit = DEFAULT_LIMIT;
   let loading = true;
 
   const bodyBox = h('div.visits__body');
@@ -164,35 +168,56 @@ export function createVisits(props) {
    * Действия
    * ------------------------------------------------------------------------ */
 
-  /** Загрузка журнала и сводки. */
-  async function load() {
-    loading = true;
-    render();
-
-    try {
-      data = await api.visitsList(limit);
-    } catch (error) {
-      data = null;
-      loading = false;
-      render();
-      toastError(describeError(error));
-      return;
-    }
-
-    loading = false;
-    render();
-
-    // Сводку берём отдельно: без неё журнал всё равно показывается.
-    try {
-      summary = await api.visitsSummary(14);
-      render();
-    } catch (error) {
-      summary = null;
-    }
-
+  /** Заголовок экрана с числом записей. */
+  function applyTitle() {
     if (typeof options.onTitle === 'function') {
       const total = (data && data.total) || 0;
       options.onTitle('Посещения', total ? countLabel(total, ['запись', 'записи', 'записей']) : '');
+    }
+  }
+
+  /**
+   * Загрузка журнала и сводки.
+   *
+   * Обычная выборка (150 записей) и сводка уже лежат в пакете данных, поэтому
+   * экран открывается мгновенно. Отдельный запрос нужен только когда
+   * руководитель выбирает другой объём — 50 или 400 записей.
+   */
+  async function load() {
+    const packed = bundle.get();
+    const packedVisits = packed && packed.visits;
+
+    if (packedVisits && limit === DEFAULT_LIMIT) {
+      data = packedVisits.list;
+      summary = packedVisits.summary;
+      loading = false;
+      applyTitle();
+      render();
+    }
+
+    const hadData = Boolean(data);
+    loading = !hadData;
+    if (!hadData) render();
+
+    try {
+      if (limit === DEFAULT_LIMIT) {
+        const fresh = await bundle.ensure();
+        const visits = fresh && fresh.visits;
+        if (visits) {
+          data = visits.list;
+          summary = visits.summary;
+        }
+      } else {
+        data = await api.visitsList(limit);
+      }
+      loading = false;
+      applyTitle();
+      render();
+    } catch (error) {
+      loading = false;
+      render();
+      // Журнал уже показан — обновление не удалось молча.
+      if (!hadData) toastError(describeError(error));
     }
   }
 

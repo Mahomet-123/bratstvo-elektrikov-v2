@@ -18,7 +18,7 @@ import { toastSuccess, toastError, toastWarning } from '../../core/toast.js';
 import { confirmDialog } from '../../core/modal.js';
 import { describeError } from '../../api/apiClient.js';
 import { api } from '../../api/endpoints.js';
-import { invalidateObjects } from '../../core/store.js';
+import bundle from '../../core/bundle.js';
 import { moneyShort, dateShort, countLabel } from '../../core/format.js';
 import { statusBadge } from '../common/badges.js';
 
@@ -170,23 +170,42 @@ export function createArchive(props) {
    * Действия
    * ------------------------------------------------------------------------ */
 
-  /** Загрузка списка архивов. */
+  /** Заголовок экрана с числом объектов в архиве. */
+  function applyTitle() {
+    if (typeof options.onTitle === 'function') {
+      const totals = (data && data.totals) || {};
+      options.onTitle('Архив', countLabel(totals.objects || 0, ['объект', 'объекта', 'объектов']) + ' по годам');
+    }
+  }
+
+  /**
+   * Загрузка списка архивов.
+   * Список лежит в пакете данных — экран открывается мгновенно.
+   */
   async function load() {
-    loading = true;
-    render();
+    const packed = bundle.get();
+    if (packed && packed.archives) {
+      data = packed.archives;
+      loading = false;
+      applyTitle();
+      render();
+    }
+
+    const hadData = Boolean(data);
+    loading = !hadData;
+    if (!hadData) render();
+
     try {
-      data = await api.archiveList();
+      const fresh = await bundle.ensure();
+      if (fresh && fresh.archives) data = fresh.archives;
       loading = false;
       render();
-      if (typeof options.onTitle === 'function') {
-        const totals = (data && data.totals) || {};
-        options.onTitle('Архив', countLabel(totals.objects || 0, ['объект', 'объекта', 'объектов']) + ' по годам');
-      }
+      applyTitle();
     } catch (error) {
       loading = false;
-      data = null;
       render();
-      toastError(describeError(error));
+      // Архив уже показан — обновление не удалось молча.
+      if (!hadData) toastError(describeError(error));
     }
   }
 
@@ -202,8 +221,8 @@ export function createArchive(props) {
 
     try {
       const result = await api.objectRestore(item.id);
-      // Объект вернулся в работу — список объектов устарел.
-      invalidateObjects();
+      // Объект вернулся в работу — пакет данных устарел, обновляем сразу.
+      await bundle.refresh();
       toastSuccess(result.message || 'Объект снова в работе');
       await load();
     } catch (error) {
@@ -232,6 +251,8 @@ export function createArchive(props) {
       } else {
         toastWarning(result.message || 'Лишних листов не было');
       }
+      // Состав архива изменился — пакет данных устарел.
+      await bundle.refresh();
       await load();
     } catch (error) {
       toastError(describeError(error));

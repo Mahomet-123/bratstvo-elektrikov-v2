@@ -19,6 +19,8 @@ const INITIAL = {
   mustChangeCode: false,
   prices: null,         // полный прайс с разделами
   objects: [],          // список объектов
+  bundle: null,         // пакет данных разделов (см. core/bundle.js)
+  bundleAt: '',         // когда пакет получен с сервера
   queueCount: 0,        // сколько записей ждёт отправки
   queueError: '',       // последняя ошибка отправки
   lastSyncAt: '',       // когда успешно отправляли
@@ -178,47 +180,19 @@ export function readCachedPrices(ignoreTtl) {
 }
 
 /**
- * Сохранить список объектов в кэш.
- * @param {Array} objects
+ * Очистить весь локальный кэш при выходе.
+ *
+ * Ключи прежних версий (список объектов лежал отдельно) тоже убираем: так
+ * у человека, обновившего приложение, не останется мусора в хранилище.
  */
-export function cacheObjects(objects) {
-  try {
-    localStorage.setItem(CONFIG.STORAGE.OBJECTS, JSON.stringify(objects));
-    localStorage.setItem(CONFIG.STORAGE.OBJECTS_AT, new Date().toISOString());
-  } catch (error) {
-    console.warn('Не удалось закэшировать объекты:', error.message);
-  }
-  store.patch({ objects: objects });
-}
-
-/**
- * Прочитать объекты из кэша.
- * @param {boolean=} ignoreTtl
- * @return {Array|null}
- */
-export function readCachedObjects(ignoreTtl) {
-  try {
-    const raw = localStorage.getItem(CONFIG.STORAGE.OBJECTS);
-    if (!raw) return null;
-    const at = localStorage.getItem(CONFIG.STORAGE.OBJECTS_AT);
-    if (!ignoreTtl && at) {
-      const ageMin = (Date.now() - new Date(at).getTime()) / 60000;
-      if (ageMin > CONFIG.CACHE.OBJECTS_TTL_MIN) return null;
-    }
-    const list = JSON.parse(raw);
-    return Array.isArray(list) ? list : null;
-  } catch (error) {
-    return null;
-  }
-}
-
-/** Очистить весь локальный кэш при выходе. */
 export function clearCache() {
   [
     CONFIG.STORAGE.PRICES,
     CONFIG.STORAGE.PRICES_AT,
     CONFIG.STORAGE.OBJECTS,
     CONFIG.STORAGE.OBJECTS_AT,
+    CONFIG.STORAGE.BUNDLE,
+    CONFIG.STORAGE.BUNDLE_AT,
     CONFIG.STORAGE.DRAFT_CALC
   ].forEach((key) => {
     try {
@@ -227,26 +201,5 @@ export function clearCache() {
       /* не критично */
     }
   });
-}
-
-/**
- * Сбросить кэш списка объектов.
- *
- * Экран «Объекты» рисует сохранённый список сразу, не дожидаясь ответа
- * сервера, — так приложение открывается мгновенно. Но после любого изменения
- * реестра (создание, правка, смена статуса, уборка, возврат из архива) этот
- * список устаревает, и человек видит неправду: например, объект, который он
- * только что убрал, или карточку со старым названием.
- *
- * Поэтому после успешного изменения реестра кэш выбрасываем: следующий заход
- * на экран дождётся ответа сервера, а он — единственный источник правды.
- */
-export function invalidateObjects() {
-  try {
-    localStorage.removeItem(CONFIG.STORAGE.OBJECTS);
-    localStorage.removeItem(CONFIG.STORAGE.OBJECTS_AT);
-  } catch (error) {
-    console.warn('Не удалось сбросить кэш объектов:', error.message);
-  }
-  store.patch({ objects: [] });
+  store.patch({ bundle: null, bundleAt: '', objects: [] });
 }

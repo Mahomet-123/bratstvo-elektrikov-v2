@@ -13,6 +13,7 @@
 import { h, clear } from '../../core/dom.js';
 import { loadStyles } from '../../core/styles.js';
 import { iconSvg } from '../../core/icons.js';
+import bundle from '../../core/bundle.js';
 import { toastError } from '../../core/toast.js';
 import { describeError } from '../../api/apiClient.js';
 import { api } from '../../api/endpoints.js';
@@ -277,18 +278,53 @@ export function createAnalytics(props) {
    * Действия
    * ------------------------------------------------------------------------ */
 
-  /** Загрузка сводки по объектам. */
+  /** Заголовок экрана с числом объектов. */
+  function applyTitle() {
+    if (typeof options.onTitle === 'function') {
+      const totals = (summary && summary.totals) || {};
+      options.onTitle('Аналитика', countLabel(totals.objects || 0, ['объект', 'объекта', 'объектов']));
+    }
+  }
+
+  /**
+   * Загрузка сводки по объектам.
+   *
+   * Обычная сводка (с закрытыми объектами) уже лежит в пакете данных, поэтому
+   * вкладка открывается мгновенно. Отдельный запрос нужен только когда
+   * руководитель сам меняет отбор — такой сводки в пакете нет.
+   */
   async function loadSummary() {
+    const packed = bundle.get();
+    const fromBundle = packed && packed.analytics;
+
+    if (fromBundle && includeClosed) {
+      summary = fromBundle;
+      loading = false;
+      applyTitle();
+      render();
+
+      // Пакет мог устареть: ensure вернёт свежий, а если он ещё годен —
+      // в сеть никто не пойдёт.
+      try {
+        const fresh = await bundle.ensure();
+        if (fresh && fresh.analytics) {
+          summary = fresh.analytics;
+          applyTitle();
+          render();
+        }
+      } catch (error) {
+        // Сводка уже показана — сообщать не о чем.
+      }
+      return;
+    }
+
     loading = true;
     render();
     try {
       summary = await api.analyticsSummary({ includeClosed: includeClosed });
       loading = false;
       render();
-      if (typeof options.onTitle === 'function') {
-        const totals = (summary && summary.totals) || {};
-        options.onTitle('Аналитика', countLabel(totals.objects || 0, ['объект', 'объекта', 'объектов']));
-      }
+      applyTitle();
     } catch (error) {
       loading = false;
       summary = null;

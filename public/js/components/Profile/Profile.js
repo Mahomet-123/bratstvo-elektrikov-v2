@@ -11,6 +11,7 @@ import { h, setContent } from '../../core/dom.js';
 import { loadStyles } from '../../core/styles.js';
 import { iconSvg } from '../../core/icons.js';
 import { store, saveSession, clearCache } from '../../core/store.js';
+import bundle from '../../core/bundle.js';
 import { toastSuccess, toastError } from '../../core/toast.js';
 import { confirmDialog } from '../../core/modal.js';
 import { describeError } from '../../api/apiClient.js';
@@ -109,10 +110,24 @@ export function createProfile(props) {
     }
   }, 'Отправить очередь сейчас');
 
+  // Обновление данных разделов одним запросом — то же, что нажатие
+  // на индикатор свежести в шапке.
+  const refreshDataBtn = h('button.btn.btn--ghost.btn--block', {
+    type: 'button',
+    onclick: () => {
+      if (typeof options.onRefreshData === 'function') {
+        options.onRefreshData();
+      } else {
+        toastSuccess('Данные уже свежие');
+      }
+    }
+  }, 'Обновить данные с сервера');
+
   const statusCard = h('div',
     h('div.page__section-title', { text: 'Отправка данных' }),
     statusRows,
-    h('div', { style: { marginTop: '12px' } }, manualSendBtn)
+    h('div', { style: { marginTop: '12px' } }, manualSendBtn),
+    h('div', { style: { marginTop: '8px' } }, refreshDataBtn)
   );
 
   /* --- Бригада (только руководитель) --- */
@@ -230,6 +245,20 @@ export function createProfile(props) {
     );
   }
 
+  /** Как давно данные разделов получены с сервера. */
+  function bundleText() {
+    if (!bundle.has()) return 'ещё не загружены';
+    const ms = bundle.ageMs();
+    if (!isFinite(ms)) return 'неизвестно';
+
+    const minutes = Math.floor(ms / 60000);
+    if (minutes < 1) return 'только что';
+    if (minutes < 60) return minutes + ' ' + plural(minutes, ['минуту', 'минуты', 'минут']) + ' назад';
+
+    const hours = Math.floor(minutes / 60);
+    return hours + ' ' + plural(hours, ['час', 'часа', 'часов']) + ' назад';
+  }
+
   /** Обновление блока состояния отправки. */
   function renderStatus() {
     const s = store.get();
@@ -250,6 +279,10 @@ export function createProfile(props) {
         h('span.profile__status-label', { text: 'Последняя отправка' }),
         h('span.profile__status-value', { text: s.lastSyncAt ? dateTimeRu(s.lastSyncAt) : 'ещё не было' })
       ),
+      h('div.profile__status-row',
+        h('span.profile__status-label', { text: 'Данные с сервера' }),
+        h('span.profile__status-value', { text: bundleText() })
+      ),
       s.queueError
         ? h('div.profile__status-row',
           h('span.profile__status-label', { text: 'Ошибка' }),
@@ -264,10 +297,14 @@ export function createProfile(props) {
   loadStyles('js/components/Profile/styles/Profile.css');
   renderAlert();
   renderStatus();
-  const unsubscribe = store.subscribe(renderStatus);
+  const unsubscribeStatus = store.subscribe(renderStatus);
+  const unsubscribeBundle = bundle.subscribe(renderStatus);
 
   return {
     el: el,
-    destroy: unsubscribe
+    destroy: () => {
+      unsubscribeStatus();
+      unsubscribeBundle();
+    }
   };
 }

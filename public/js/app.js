@@ -15,6 +15,7 @@ import { toastError, toastWarning, toastSuccess } from './core/toast.js';
 import { describeError } from './api/apiClient.js';
 import { api } from './api/endpoints.js';
 import { start as startSync, flushManual } from './core/sync.js';
+import bundle from './core/bundle.js';
 import { createLogin } from './components/Login/Login.js';
 import { createAppShell } from './components/AppShell/AppShell.js';
 import { createProfile } from './components/Profile/Profile.js';
@@ -62,6 +63,9 @@ async function start() {
 
   const session = loadSession();
   if (session) {
+    // Пакет данных поднимаем из памяти устройства ещё до первого экрана:
+    // так приложение открывается мгновенно, а свежее подтянется следом.
+    bundle.restore();
     mountShell();
   } else {
     mountLogin();
@@ -102,6 +106,9 @@ function mountShell() {
     },
     onManualSend: () => {
       sendQueueNow();
+    },
+    onRefreshData: () => {
+      syncNow();
     }
   });
 
@@ -111,7 +118,8 @@ function mountShell() {
   // Регистрация экранов.
   shell.register('/profile', () => createProfile({
     onLogout: () => mountLogin(),
-    onNavigate: go
+    onNavigate: go,
+    onRefreshData: () => syncNow()
   }));
 
   shell.register('/objects', () => createObjectsList({
@@ -206,6 +214,25 @@ async function sendQueueNow() {
   else toastError('Не удалось отправить: ' + (result.stopped || 'проверьте связь'));
 }
 
+/**
+ * Обновление данных разделов по нажатию на индикатор свежести.
+ * Один запрос вместо пяти: объекты, аналитика, бригада, посещения, архив.
+ */
+async function syncNow() {
+  if (!navigator.onLine) {
+    toastWarning('Нет сети. Данные обновятся, как только появится связь', 5000);
+    return;
+  }
+
+  toastWarning('Обновляем данные с сервера…');
+  try {
+    await bundle.load({ force: true });
+    toastSuccess('Данные обновлены');
+  } catch (error) {
+    toastError('Не удалось обновить данные: ' + describeError(error));
+  }
+}
+
 /** Отметить вход в журнале посещений — один раз за запуск. */
 function logVisit() {
   if (store.get().visitsLogged) return;
@@ -218,8 +245,14 @@ function logVisit() {
   });
 }
 
-/** Предзагрузка прайса: сначала из кэша, затем с сервера. */
+/** Предзагрузка прайса и пакета данных разделов. */
 async function warmUp() {
+  // Пакет данных: если он уже лежит на устройстве — показываем сразу,
+  // а устаревший тихо обновляем.
+  bundle.ensure().catch((error) => {
+    log.warn('Пакет данных не загрузился', error.message);
+  });
+
   const cached = readCachedPrices();
   if (cached) {
     cachePrices(cached);

@@ -1,7 +1,13 @@
 /* ==========================================================================
-   SyncIndicator.css — индикатор состояния отправки
-   Блок: .sync
+   SyncIndicator.css — состояние обмена с сервером
+   Блок: .sync (две кнопки: очередь отправки и свежесть данных)
    ========================================================================== */
+
+.sync-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
 
 .sync {
   display: inline-flex;
@@ -18,6 +24,15 @@
 }
 
 .sync--ok {
+  background: var(--c-success-soft);
+  color: var(--c-success);
+}
+
+/* Свежесть данных: спокойный цвет, пока данные годны. */
+.sync--data {
+  background: var(--c-primary-soft);
+  color: var(--c-primary-dark);
+}
   background: var(--c-success-soft);
   color: var(--c-success);
 }

@@ -260,6 +260,8 @@ async function login(page, name, code) {
     return true;
   } catch (error) {
     const state = await page.evaluate(() => ({
+      name: (document.querySelector('#login-name') || {}).value || '',
+      code: (document.querySelector('#login-code') || {}).value || '',
       button: (document.querySelector('.login__submit') || {}).textContent || '',
       error: (document.querySelector('.login__error') || {}).textContent || ''
     }));
@@ -374,6 +376,20 @@ async function main() {
     await page.setViewport({ width: 430, height: 932, deviceScaleFactor: 2 });
     await page.setCacheEnabled(false);
 
+    // Считаем обращения к API: надо убедиться, что переключение вкладок
+    // не ходит в сеть, а берёт данные из пакета на устройстве.
+    await page.evaluateOnNewDocument(() => {
+      window.__apiCalls = [];
+      const original = window.fetch;
+      window.fetch = function (url, options) {
+        try {
+          const body = JSON.parse(options.body);
+          if (Array.isArray(window.__apiCalls)) window.__apiCalls.push(body.action);
+        } catch (error) { /* не наш запрос */ }
+        return original.apply(this, arguments);
+      };
+    });
+
     // Копирование ссылок проверяем по-настоящему: без разрешения браузер
     // откажет, и проверка «ссылка копируется» была бы ложной.
     await browser.defaultBrowserContext()
@@ -447,7 +463,9 @@ async function main() {
     check('экран расчёта открыт', true);
 
     await clickElement(page, '.calc__add .btn');
-    await page.waitForSelector('.calc-picker', { timeout: 10000 });
+    // Если прайс ещё не доехал, экран сам его догружает и только потом
+    // открывает окно выбора — на это нужно время.
+    await page.waitForSelector('.calc-picker', { timeout: 40000 });
     check('окно выбора позиций открыто', true);
 
     // Раскрываем первый раздел и берём первую работу.
@@ -513,7 +531,10 @@ async function main() {
     await page.type('.day-form input[inputmode="decimal"]', '2');
     await page.type('.day-form textarea', 'Дополнительные работы');
     await clickElement(page, '.day-form .btn--primary');
-    await waitForCount(page, '.day-record', 2, 20000);
+    const secondSaved = await waitForCount(page, '.day-record', 2, 20000);
+    check('вторая запись дня сохранена', secondSaved,
+      secondSaved ? '' : 'уведомление: ' + (await lastToast(page)) +
+        ', часов в форме: ' + (await page.$eval('.day-form input[inputmode="decimal"]', (n) => n.value)));
     await waitFor(page, '.day-record .badge--danger', 20000);
     const duplicateBadge = await textOf(page, '.day-record .badge--danger');
     check('повтор помечен, но не заблокирован', /повтор/.test(duplicateBadge || ''), duplicateBadge);
@@ -777,7 +798,62 @@ async function main() {
     check('убранного объекта нет в списке', gone);
     if (gone) createdObjectId = '';
 
-    console.log('\n=== 14. Ошибки консоли ===');
+    console.log('\n=== 14. Переключение вкладок ===');
+    // Данные разделов лежат в пакете на устройстве, поэтому переключение
+    // вкладок не должно обращаться к серверу. Проверяем это по-настоящему:
+    // считаем запросы к API за время обхода разделов.
+    await page.evaluate(() => { window.__apiCalls = []; });
+    for (const hash of ['#/objects', '#/analytics', '#/brigade', '#/objects', '#/analytics', '#/profile']) {
+      await page.evaluate((h) => { window.location.hash = h; }, hash);
+      await sleep(1200);
+    }
+    const tabCalls = await page.evaluate(() => window.__apiCalls || []);
+    check('переключение вкладок не обращается к серверу', tabCalls.length === 0,
+      tabCalls.length ? 'запросы: ' + tabCalls.join(', ') : 'ни одного запроса');
+
+    const syncTexts = await page.$$eval('.sync__text', (nodes) => nodes.map((n) => n.textContent.trim()));
+    check('индикатор показывает и очередь, и свежесть данных', syncTexts.length >= 2, syncTexts.join(' | '));
+
+    // Тексты строк не должны вылезать за край экрана. Была такая беда
+    // в профиле: заголовок и подпись строки шли одной строкой и заезжали
+    // под значок. Проверяем не только профиль — правило общее для всех строк.
+    await page.goto(BASE + '#/profile', { waitUntil: 'domcontentloaded' });
+    await sleep(1500);
+    const overflow = await page.evaluate(() => {
+      const width = document.documentElement.clientWidth;
+      const bad = [];
+      document.querySelectorAll('.row__title, .row__sub, .app-header__title, .sync__text').forEach((node) => {
+        const rect = node.getBoundingClientRect();
+        if (rect.width > 0 && rect.right > width + 0.5) {
+          bad.push((node.textContent || '').trim().slice(0, 30));
+        }
+      });
+      return { bad: bad, horizontal: document.documentElement.scrollWidth - width };
+    });
+    check('тексты не вылезают за край экрана',
+      overflow.bad.length === 0 && overflow.horizontal <= 1,
+      overflow.bad.length ? overflow.bad.join(' | ') : 'лишней прокрутки нет');
+
+    // На широком экране навигация должна уехать в верхнюю шапку: внизу она
+    // выглядела островком посреди пустого места.
+    await page.setViewport({ width: 1280, height: 800 });
+    await page.goto(BASE + '#/objects', { waitUntil: 'domcontentloaded' });
+    await sleep(1500);
+    const navBox = await page.evaluate(() => {
+      const nav = document.querySelector('.app-nav');
+      const header = document.querySelector('.app-header');
+      if (!nav || !header) return null;
+      const n = nav.getBoundingClientRect();
+      const h = header.getBoundingClientRect();
+      return { top: n.top, bottom: n.bottom, headerBottom: h.bottom, half: window.innerHeight / 2 };
+    });
+    check('на широком экране навигация в шапке',
+      Boolean(navBox) && navBox.top < navBox.headerBottom && navBox.bottom < navBox.half,
+      navBox ? 'верх ' + Math.round(navBox.top) + 'px, низ ' + Math.round(navBox.bottom) + 'px' : 'навигация не найдена');
+
+    await page.setViewport({ width: 430, height: 932, deviceScaleFactor: 2 });
+
+    console.log('\n=== 15. Ошибки консоли ===');
     const meaningful = consoleErrors.filter((line) => line.indexOf('sw.js') === -1);
     check('в консоли браузера нет ошибок', meaningful.length === 0,
       meaningful.length ? meaningful.slice(0, 3).join(' | ') : 'чисто');

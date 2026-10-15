@@ -4,6 +4,7 @@
   "filePushOrder": [
     "Config.gs",
     "Utils.gs",
-    "Sheets.gs"
+    "Sheets.gs",
+    "Bundle.gs"
   ]
 }

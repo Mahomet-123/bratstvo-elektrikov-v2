@@ -11,7 +11,8 @@
 import { h, clear } from '../../core/dom.js';
 import { loadStyles } from '../../core/styles.js';
 import { iconSvg } from '../../core/icons.js';
-import { store, invalidateObjects } from '../../core/store.js';
+import { store } from '../../core/store.js';
+import bundle from '../../core/bundle.js';
 import { toastSuccess, toastError } from '../../core/toast.js';
 import { confirmDialog, openModal } from '../../core/modal.js';
 import { describeError } from '../../api/apiClient.js';
@@ -298,8 +299,8 @@ export function createObjectCard(props) {
   async function changeStatus(status) {
     try {
       await api.objectSetStatus(id, status);
-      // Список объектов рисуется из кэша — после смены статуса он устарел.
-      invalidateObjects();
+      // Список объектов берётся из пакета данных — он устарел, обновляем.
+      bundle.refresh();
       toastSuccess('Статус изменён: ' + CONFIG.STATUS_LABEL[status]);
       await load();
     } catch (error) {
@@ -346,8 +347,8 @@ export function createObjectCard(props) {
 
     try {
       await api.objectUpdate(id, data);
-      // Название, клиент и адрес видны в списке — кэш больше не годится.
-      invalidateObjects();
+      // Название, клиент и адрес видны в списке — пакет данных устарел.
+      bundle.refresh();
       toastSuccess('Изменения сохранены');
       await load();
     } catch (error) {
@@ -367,9 +368,9 @@ export function createObjectCard(props) {
 
     try {
       const result = await api.objectRemove(id);
-      // Объекта больше нет — из кэша его надо убрать немедленно, иначе он
-      // останется в списке до ответа сервера, а без сети — до конца сессии.
-      invalidateObjects();
+      // Объекта больше нет — обновляем пакет сразу, чтобы он не остался
+      // в списке до следующего захода.
+      bundle.refresh();
       toastSuccess(result.message || 'Объект убран');
       navigate('/objects', true);
     } catch (error) {

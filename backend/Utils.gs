@@ -370,6 +370,20 @@ function pick_(obj, keys) {
 }
 
 /**
+ * Сколько последних записей журнала ошибок храним.
+ * Журнал нужен для разбора свежих сбоев; старые записи только раздувают лист
+ * и замедляют таблицу.
+ */
+const LOG_KEEP_ROWS_ = 500;
+
+/**
+ * Насколько журнал может перерасти предел до обрезки.
+ * Удаление строк — операция небыстрая, поэтому подчищаем пачкой, а не после
+ * каждой записи: пусть накопится небольшой излишек.
+ */
+const LOG_TRIM_MARGIN_ = 50;
+
+/**
  * Запись ошибки в лист «Журнал ошибок». Никогда не бросает исключение —
  * журналирование не должно ломать основной сценарий.
  * @param {string} module
@@ -386,7 +400,28 @@ function logError_(module, err, context) {
       'сообщение': message,
       'контекст': JSON.stringify({ stack: stack, context: context || {} }).slice(0, 900)
     });
+    trimErrorLog_();
   } catch (e) {
     // Молча: журнал недоступен — не повод падать.
   }
+}
+
+/**
+ * Обрезка журнала ошибок до последних LOG_KEEP_ROWS_ записей.
+ *
+ * Лист растёт с каждым сбоем и рано или поздно начинает тормозить таблицу.
+ * Шапка (строка 1) остаётся на месте, лишние старые строки удаляются.
+ *
+ * @return {number} сколько строк удалено
+ */
+function trimErrorLog_() {
+  const sh = sheetByName_(CONFIG.SHEETS.LOG);
+  if (!sh) return 0;
+
+  const dataRows = sh.getLastRow() - 1;   // без строки заголовков
+  if (dataRows <= LOG_KEEP_ROWS_ + LOG_TRIM_MARGIN_) return 0;
+
+  const removeCount = dataRows - LOG_KEEP_ROWS_;
+  sh.deleteRows(2, removeCount);
+  return removeCount;
 }

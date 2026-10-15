@@ -355,9 +355,28 @@ export function createCalculator(props) {
 
   /** Открыть окно выбора позиций прайса. */
   async function openPicker() {
+    // Прайс большой и приходит не мгновенно: кнопку могли нажать раньше, чем
+    // он доехал. Раньше в этом случае был отказ «прайс ещё не загружен» —
+    // хотя связь есть и ждать всего пару секунд. Теперь просто дожидаемся.
     if (!prices) {
-      toastError('Прайс ещё не загружен. Проверьте связь.');
-      return;
+      addBtn.disabled = true;
+      setContent(addBtn,
+        h('span.btn__icon', { html: iconSvg('sync', 18) }),
+        'Загружаем прайс…'
+      );
+      try {
+        prices = await api.pricesList();
+        cachePrices(prices);
+      } catch (error) {
+        toastError('Не удалось загрузить прайс: ' + describeError(error));
+        return;
+      } finally {
+        addBtn.disabled = false;
+        setContent(addBtn,
+          h('span.btn__icon', { html: iconSvg('plus', 18) }),
+          'Добавить позицию'
+        );
+      }
     }
 
     const addedIds = new Set(rows.map((row) => row.id).filter(Boolean));

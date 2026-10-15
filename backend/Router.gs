@@ -25,6 +25,15 @@ const ROUTES_ = {
     }
   },
 
+  /* --- Пакет данных для экранов разделов --- */
+
+  'data.bundle': {
+    auth: 'user',
+    handler: function (ctx, session) {
+      return dataBundle_(ctx.token, session, ctx.payload || {});
+    }
+  },
+
   /* --- Первичная инициализация таблицы --- */
 
   'setup.status': {

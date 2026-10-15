@@ -11,10 +11,10 @@
 import { h, setContent, clear, debounce } from '../../core/dom.js';
 import { loadStyles } from '../../core/styles.js';
 import { iconSvg } from '../../core/icons.js';
-import { store, cacheObjects, readCachedObjects } from '../../core/store.js';
+import { store } from '../../core/store.js';
+import bundle from '../../core/bundle.js';
 import { toastError } from '../../core/toast.js';
 import { describeError } from '../../api/apiClient.js';
-import { api } from '../../api/endpoints.js';
 import { moneyShort, hours, dateShort } from '../../core/format.js';
 import { statusBadge } from '../common/badges.js';
 import { CONFIG } from '../../config.js';
@@ -215,12 +215,18 @@ export function createObjectsList(props) {
    * Данные
    * ------------------------------------------------------------------------ */
 
-  /** Загрузка списка объектов. */
+  /**
+   * Загрузка списка объектов.
+   *
+   * Данные разделов лежат в пакете на устройстве (core/bundle.js), поэтому
+   * экран рисуется сразу, без обращения к сети. Свежий пакет приходит
+   * из ensure(): если он ещё годен, запроса не будет вовсе.
+   */
   async function load() {
-    // Сначала показываем кэш — приложение должно открываться мгновенно.
-    const cached = readCachedObjects(true);
-    if (cached && cached.length) {
-      objects = cached;
+    const cached = bundle.get();
+    if (cached) {
+      objects = cached.objects || [];
+      loading = false;
       renderTabs();
       renderList();
     }
@@ -229,9 +235,8 @@ export function createObjectsList(props) {
     if (!objects.length) renderList();
 
     try {
-      const data = await api.objectsList({ includeClosed: true });
+      const data = await bundle.ensure();
       objects = (data && data.objects) || [];
-      cacheObjects(objects);
       loading = false;
       renderTabs();
       renderList();
