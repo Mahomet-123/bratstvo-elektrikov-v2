@@ -201,20 +201,32 @@ async function goTo(page, hash, selector, timeout) {
  * Искать объект по названию нельзя: в таблице могут лежать прежние объекты
  * с тем же названием, и проверка открыла бы чужой журнал. Номер объекта
  * уникален, поэтому опознаём карточку по нему.
+ *
+ * Ждём появления карточки: список сначала рисуется из сохранённого на
+ * устройстве, и только потом заменяется свежим. Одного замера мало — карточка
+ * нужного объекта появляется чуть позже, а до неё на экране уже есть чужие.
  */
-async function clickObjectCardByNumber(page, number) {
+async function clickObjectCardByNumber(page, number, timeout) {
   const digits = String(number).replace(/\D/g, '');
-  const clicked = await page.evaluate((needle) => {
-    const cards = Array.prototype.slice.call(document.querySelectorAll('.object-card'));
-    const target = cards.find((card) => {
-      const label = card.querySelector('.object-card__num');
-      return label && label.textContent.replace(/\D/g, '') === needle;
-    });
-    if (!target) return false;
-    target.scrollIntoView({ block: 'center' });
-    target.click();
-    return true;
-  }, digits);
+  const limit = timeout || 25000;
+  const started = Date.now();
+  let clicked = false;
+
+  while (!clicked && Date.now() - started < limit) {
+    clicked = await page.evaluate((needle) => {
+      const cards = Array.prototype.slice.call(document.querySelectorAll('.object-card'));
+      const target = cards.find((card) => {
+        const label = card.querySelector('.object-card__num');
+        return label && label.textContent.replace(/\D/g, '') === needle;
+      });
+      if (!target) return false;
+      target.scrollIntoView({ block: 'center' });
+      target.click();
+      return true;
+    }, digits);
+    if (!clicked) await sleep(300);
+  }
+
   if (!clicked) throw new Error('В списке нет карточки объекта № ' + digits);
 }
 
@@ -474,6 +486,27 @@ async function main() {
     const itemCount = await page.$$eval('.calc-picker__item', (nodes) => nodes.length);
     check('позиции прайса видны', itemCount > 0, itemCount + ' позиций в разделе');
 
+    // Список прайса обязан прокручиваться: в разделе десятки позиций, и до
+    // нижних надо добраться. Список — флекс-колонка, а флекс-элементы
+    // ужимаются под ограничение высоты: раздел сжимался, содержимое обрезалось
+    // по overflow: hidden, и прокрутки не было вовсе.
+    const pickerScroll = await page.evaluate(() => {
+      const list = document.querySelector('.calc-picker__list');
+      if (!list) return null;
+      const before = list.scrollTop;
+      list.scrollTop = 300;
+      return {
+        clientHeight: list.clientHeight,
+        scrollHeight: list.scrollHeight,
+        moved: list.scrollTop > before
+      };
+    });
+    check('список прайса прокручивается',
+      Boolean(pickerScroll) && pickerScroll.moved && pickerScroll.scrollHeight > pickerScroll.clientHeight,
+      pickerScroll
+        ? 'видно ' + pickerScroll.clientHeight + 'px из ' + pickerScroll.scrollHeight + 'px'
+        : 'списка нет');
+
     // Берём две разные работы: повторное нажатие по той же позиции ничего не делает.
     const pickerItems = await page.$$('.calc-picker__item');
     await pickerItems[0].click();
@@ -506,7 +539,7 @@ async function main() {
     // Открываем объект по номеру, а не по названию: в таблице могут лежать
     // прежние объекты с тем же названием, и поиск по тексту открыл бы чужой
     // журнал — тогда проверка «часы просуммированы» ровно ничего не значит.
-    await goTo(page, '#/objects', '.object-card', 20000);
+    await goTo(page, '#/objects', '.objects', 20000);
     await clickObjectCardByNumber(page, objectNumber);
     await page.waitForSelector('.object-card-screen__hero', { timeout: 15000 });
 
@@ -709,7 +742,7 @@ async function main() {
 
     // Уходим на список и обратно: адрес закупок уже открыт, повторный переход
     // по тому же адресу экран не перерисует.
-    await goTo(page, '#/objects', '.object-card', 20000);
+    await goTo(page, '#/objects', '.objects', 20000);
     await page.goto(BASE + '#/object/' + objectId + '/purchases', { waitUntil: 'domcontentloaded' });
     await page.waitForSelector('.purchases', { timeout: 15000 });
     const restored = await waitForText(page, '.purchase__material', 'Автомат 16А (офлайн)', 20000);
@@ -779,7 +812,7 @@ async function main() {
       archiveItems + ' таблиц, пустое состояние: ' + (archiveEmpty ? 'да' : 'нет'));
 
     console.log('\n=== 13. Уборка тестового объекта ===');
-    await goTo(page, '#/objects', '.object-card', 20000);
+    await goTo(page, '#/objects', '.objects', 20000);
     await clickObjectCardByNumber(page, objectNumber);
     await page.waitForSelector('.object-card-screen__hero', { timeout: 15000 });
 
