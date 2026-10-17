@@ -30,7 +30,18 @@ function purchasesList_(token, id) {
   });
 
   const sum = round2_(items.reduce(function (acc, item) { return acc + num_(item.sum, 0); }, 0));
-  return { purchases: items, total: items.length, sum: sum };
+
+  // Наценка на материал — свойство объекта, но экрану закупок она нужна
+  // вместе со списком, чтобы не делать второй запрос.
+  const markupSum = markupSumOf_(object);
+  return {
+    purchases: items,
+    total: items.length,
+    sum: sum,
+    markup: bool_(object['наценка']),
+    markupSum: markupSum,
+    withMarkup: round2_(sum + markupSum)
+  };
 }
 
 /**
@@ -77,6 +88,74 @@ function addPurchase_(token, id, purchase) {
   assert_(sheetName, 'У объекта не задан лист.', 'NOT_FOUND');
 
   const p = purchase || {};
+  const record = purchaseRecord_(p);
+
+  return withLock_(function () {
+    withObjectSheet_(object, function () {
+      appendBlockRow_(sheetName, CONFIG.OBJECT_BLOCKS.PURCHASE, OBJECT_HEADERS[CONFIG.OBJECT_BLOCKS.PURCHASE], record);
+    });
+    recalcPurchases_(object);
+    applyMarkup_(object, p.markup);
+
+    logVisit_(session.name, session.role,
+      'закупка по объекту ' + objectView_(object).title + ': ' + record['материал'], {});
+
+    return { ok: true, purchase: purchaseView_(record) };
+  });
+}
+
+/**
+ * Добавление сразу нескольких закупок одной операцией.
+ *
+ * За один заход в магазин человек вносит несколько наименований. Отправлять
+ * их по одной — это столько же запросов и столько же пересчётов листа,
+ * поэтому здесь всё идёт под одним замком: быстрее и без «половины» записи.
+ *
+ * @param {string} token
+ * @param {string} id — объект
+ * @param {Array<Object>} items — [{ purchase }]
+ * @param {boolean=} markup — включить наценку на материал
+ * @return {Object} { ok, purchases }
+ */
+function addPurchasesBatch_(token, id, items, markup) {
+  const session = requireSession_(token);
+  const object = requireObject_(id);
+  const sheetName = str_(object['лист']);
+  assert_(sheetName, 'У объекта не задан лист.', 'NOT_FOUND');
+
+  const list = Array.isArray(items) ? items : [];
+  assert_(list.length, 'Нет ни одной закупки для записи.', 'VALIDATION');
+
+  // Сначала проверяем всё: если хоть одна строка с ошибкой, не пишем ничего.
+  const records = list.map(function (item) {
+    return purchaseRecord_((item && item.purchase) || item || {});
+  });
+
+  return withLock_(function () {
+    withObjectSheet_(object, function () {
+      records.forEach(function (record) {
+        appendBlockRow_(sheetName, CONFIG.OBJECT_BLOCKS.PURCHASE, OBJECT_HEADERS[CONFIG.OBJECT_BLOCKS.PURCHASE], record);
+      });
+    });
+    recalcPurchases_(object);
+    applyMarkup_(object, markup);
+
+    logVisit_(session.name, session.role,
+      'закупки по объекту ' + objectView_(object).title + ': ' + records.length + ' шт.', {});
+
+    return {
+      ok: true,
+      purchases: records.map(purchaseView_)
+    };
+  });
+}
+
+/**
+ * Запись закупки из полезной нагрузки: проверка и сборка строки.
+ * @param {Object} p
+ * @return {Object} строка для листа
+ */
+function purchaseRecord_(p) {
   const material = truncate_(p.material, 200);
   const qty = num_(p.qty, 0);
   const price = round2_(num_(p.price, 0));
@@ -85,35 +164,34 @@ function addPurchase_(token, id, purchase) {
   assert_(qty > 0, 'Количество должно быть больше нуля.', 'VALIDATION');
   assert_(price >= 0, 'Цена не может быть отрицательной.', 'VALIDATION');
 
-  const date = isoDate_(p.date) || todayIso_();
-  const sum = round2_(qty * price);
   const photos = purchasePhotos_(p);
 
-  return withLock_(function () {
-    const record = {
-      'id': uid_('B'),
-      'дата': date,
-      'материал': material,
-      'количество': qty,
-      'единица': truncate_(p.unit, 20),
-      'цена': price,
-      'сумма': sum,
-      'комментарий': truncate_(p.comment, 500),
-      // Несколько накладных помещаются в одну ячейку списком ссылок.
-      'фото': truncate_(joinCellList_(photos.links), 2000),
-      'фото id': truncate_(joinCellList_(photos.ids), 2000),
-      'создано': nowIso_()
-    };
+  return {
+    'id': uid_('B'),
+    'дата': isoDate_(p.date) || todayIso_(),
+    'материал': material,
+    'количество': qty,
+    'единица': truncate_(p.unit, 20),
+    'цена': price,
+    'сумма': round2_(qty * price),
+    'комментарий': truncate_(p.comment, 500),
+    // Несколько накладных помещаются в одну ячейку списком ссылок.
+    'фото': truncate_(joinCellList_(photos.links), 2000),
+    'фото id': truncate_(joinCellList_(photos.ids), 2000),
+    'создано': nowIso_()
+  };
+}
 
-    withObjectSheet_(object, function () {
-      appendBlockRow_(sheetName, CONFIG.OBJECT_BLOCKS.PURCHASE, OBJECT_HEADERS[CONFIG.OBJECT_BLOCKS.PURCHASE], record);
-    });
-    recalcPurchases_(object);
-
-    logVisit_(session.name, session.role,
-      'закупка по объекту ' + objectView_(object).title + ': ' + material, {});
-
-    return { ok: true, purchase: purchaseView_(record) };
+/**
+ * Наценка на материал по объекту: включить или обнулить.
+ * Если в запросе флага нет — ничего не меняем.
+ * @param {Object} object
+ * @param {boolean|undefined} markup
+ */
+function applyMarkup_(object, markup) {
+  if (markup === undefined || markup === null) return;
+  updateRow_(CONFIG.SHEETS.OBJECTS, object._row, {
+    'наценка': markup ? 'да' : ''
   });
 }
 

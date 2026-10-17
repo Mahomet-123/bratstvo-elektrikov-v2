@@ -382,12 +382,12 @@ async function attachPhoto(page, file, index) {
   await input.uploadFile(file);
 }
 
-/** Заполнение формы закупки. */
+/** Заполнение первой строки формы закупки. */
 async function fillPurchase(page, data) {
-  await page.type('.purchase-form input[type="text"]', data.material);
-  const numeric = await page.$$('.purchase-form input[inputmode="decimal"]');
-  await numeric[0].type(String(data.qty));
-  await numeric[1].type(String(data.price));
+  const row = '.purchase-form__row:nth-child(1)';
+  await page.type(row + ' .purchase-form__name', data.material);
+  await page.type(row + ' .purchase-form__qty', String(data.qty));
+  await page.type(row + ' .purchase-form__price', String(data.price));
   await page.type('.purchase-form textarea', data.comment);
 }
 
@@ -630,6 +630,19 @@ async function main() {
     await page.waitForSelector('.purchases', { timeout: 15000 });
     check('экран закупок открыт', true);
 
+    // Форма: три строки сразу, режимы ввода и галочка наценки.
+    const defaultRows = await countOf(page, '.purchase-form__row');
+    check('в форме сразу три строки', defaultRows === 3, defaultRows + ' строк');
+
+    await clickElement(page, '.purchase-form__add .btn');
+    const fourRows = await countOf(page, '.purchase-form__row');
+    check('кнопка «плюс» добавляет строку', fourRows === 4, fourRows + ' строк');
+    await clickElement(page, '.purchase-form__row:last-child .purchase-form__remove');
+
+    const formModes = await page.$$eval('.purchase-form__mode', (nodes) => nodes.map((n) => n.textContent.trim()));
+    check('есть переключение режима ввода', formModes.length === 2, formModes.join(' | '));
+    check('галочка наценки на месте', (await countOf(page, '.purchase-form__check')) === 1);
+
     await attachPhoto(page, photoPath);
     const previewShown = await waitFor(page, '.photo-uploader__item', 40000);
     check('фотография сжата и показана', previewShown,
@@ -795,11 +808,13 @@ async function main() {
       comment: 'Записано без сети'
     });
     await clickElement(page, '.purchase-form .btn--primary');
-    const offlineToast = await waitForText(page, '.toast', 'сохранена на телефоне', 15000);
+    // Записей может быть несколько, поэтому подпись бывает и «сохранена», и «сохранены».
+    const offlineToast = await waitForText(page, '.toast', 'на телефоне', 15000);
     check('без сети запись уходит в очередь', offlineToast);
 
-    const queuedIndicator = await textOf(page, '.sync__text');
-    check('индикатор показывает очередь', /очеред/.test(String(queuedIndicator || '')), queuedIndicator);
+    // Индикатор обновляется чуть позже самой записи — ждём текст, а не читаем разом.
+    const queuedIndicator = await waitForText(page, '.sync__text', 'очеред', 15000);
+    check('индикатор показывает очередь', queuedIndicator, await textOf(page, '.sync__text'));
 
     await page.setOfflineMode(false);
     // Очередь отправляется сама при появлении сети — ждём именно этого.

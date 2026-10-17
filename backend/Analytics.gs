@@ -27,6 +27,8 @@ function analyticsSummary_(token, options) {
     closed: 0,
     estimate: 0,
     purchases: 0,
+    // Наценка на материал по всем объектам, где она включена.
+    markup: 0,
     hours: 0,
     positions: 0,
     // Сколько сметы ещё не закрыто закупками — «остаток работ».
@@ -42,6 +44,7 @@ function analyticsSummary_(token, options) {
     const estimate = num_(view.totals.estimate, 0);
     const purchases = num_(view.totals.purchases, 0);
     const hours = num_(view.totals.hours, 0);
+    const markup = num_(view.totals.markupSum, 0);
     const positions = int_(row['позиции'], 0);
 
     objects.push({
@@ -52,6 +55,7 @@ function analyticsSummary_(token, options) {
       status: view.status,
       estimate: round2_(estimate),
       purchases: round2_(purchases),
+      markup: round2_(markup),
       hours: round2_(hours),
       remaining: round2_(Math.max(0, estimate - purchases)),
       created: view.created,
@@ -63,6 +67,7 @@ function analyticsSummary_(token, options) {
     else totals.open++;
     totals.estimate = round2_(totals.estimate + estimate);
     totals.purchases = round2_(totals.purchases + purchases);
+    totals.markup = round2_(totals.markup + markup);
     totals.hours = round2_(totals.hours + hours);
     totals.positions += positions;
     totals.remaining = round2_(totals.remaining + Math.max(0, estimate - purchases));

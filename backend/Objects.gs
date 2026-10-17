@@ -163,6 +163,40 @@ function findObjectByNumber_(number) {
  * @param {boolean=} withTotals — добавить пересчитанные итоги
  * @return {Object}
  */
+function markupSumOf_(object) {
+  if (!bool_(object['наценка'])) return 0;
+  const purchases = round2_(num_(object['итог закупок'], 0));
+  if (!(purchases > 0)) return 0;
+  return round2_(Math.max(purchases * CONFIG.MARKUP_PERCENT / 100, CONFIG.MARKUP_MIN));
+}
+
+/**
+ * Включение и выключение наценки на материал.
+ * @param {string} token
+ * @param {string} id
+ * @param {boolean} on
+ * @return {Object}
+ */
+function setObjectMarkup_(token, id, on) {
+  const session = requireSession_(token);
+  const object = requireObject_(id);
+  const next = Boolean(on);
+
+  return withLock_(function () {
+    updateRow_(CONFIG.SHEETS.OBJECTS, object._row, {
+      'наценка': next ? 'да' : '',
+      'обновлён': nowIso_()
+    });
+
+    const fresh = requireObject_(id);
+    logVisit_(session.name, session.role,
+      (next ? 'включил' : 'обнулил') + ' наценку на материал по объекту ' +
+      objectView_(fresh).title, {});
+
+    return { ok: true, object: objectView_(fresh, true) };
+  });
+}
+
 function objectView_(object, withTotals) {
   const number = int_(object['номер'], 0);
   const view = {
@@ -190,6 +224,10 @@ function objectView_(object, withTotals) {
       equipmentCost: round2_(num_(object['оборудование'], 0)),
       estimate: round2_(num_(object['итог расчёта'], 0)),
       purchases: round2_(num_(object['итог закупок'], 0)),
+      // Наценка на материал: включена галочкой и считается от суммы закупок.
+      markup: bool_(object['наценка']),
+      markupSum: markupSumOf_(object),
+      withMarkup: round2_(num_(object['итог закупок'], 0) + markupSumOf_(object)),
       hours: num_(object['часы'], 0),
       positions: int_(object['позиции'], 0)
     }

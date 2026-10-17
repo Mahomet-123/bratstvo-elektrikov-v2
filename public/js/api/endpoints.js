@@ -62,6 +62,7 @@ export const api = {
   objectCreate: (data) => request('objects.create', data),
   objectUpdate: (id, data) => request('objects.update', Object.assign({ id: id }, data)),
   objectSetStatus: (id, status) => request('objects.setStatus', { id: id, status: status }),
+  objectSetMarkup: (id, on) => request('objects.setMarkup', { id: id, on: Boolean(on) }),
   objectClose: (id) => request('objects.close', { id: id }),
   objectRestore: (id) => request('objects.restore', { id: id }),
   objectRemove: (id) => request('objects.remove', { id: id }),
@@ -82,6 +83,9 @@ export const api = {
 
   purchasesList: (id) => request('purchases.list', { id: id }),
   purchasesAdd: (id, purchase) => request('purchases.add', { id: id, purchase: purchase }),
+  // Несколько наименований за один заход — одной операцией.
+  purchasesAddBatch: (id, items, markup) =>
+    request('purchases.addBatch', { id: id, items: items, markup: Boolean(markup) }),
   purchasesRemove: (id, rowId) => request('purchases.remove', { id: id, rowId: rowId }),
 
   /* --- Фотографии накладных --- */

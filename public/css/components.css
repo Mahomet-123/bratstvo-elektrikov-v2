@@ -373,6 +373,29 @@
   gap: var(--sp-3);
 }
 
+/*
+ * Три числа в один ряд: смета, материалы, наценка. На узком экране колонки
+ * узкие, поэтому подпись и значение чуть мельче — иначе подпись занимает
+ * три строки, а число не помещается.
+ */
+.stats--three {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--sp-2);
+}
+
+.stats--three .stat {
+  padding: var(--sp-3);
+}
+
+.stats--three .stat__label {
+  font-size: 11px;
+  line-height: 1.25;
+}
+
+.stats--three .stat__value {
+  font-size: 17px;
+}
+
 .stat {
   background: var(--c-surface);
   border: 1px solid var(--c-border);

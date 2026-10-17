@@ -93,15 +93,23 @@ export function createAnalytics(props) {
 
     const totals = summary.totals || {};
 
-    bodyBox.appendChild(h('div.stats.analytics__stats',
-      h('div.stat.stat--wide',
+    // Три главных числа — в один ряд: смета, материалы и наценка на них.
+    bodyBox.appendChild(h('div.stats.stats--three.analytics__stats',
+      h('div.stat',
         h('div.stat__label', { text: 'Смета по всем объектам' }),
         h('div.stat__value', { text: moneyShort(totals.estimate || 0) })
       ),
-      h('div.stat.stat--wide',
+      h('div.stat',
         h('div.stat__label', { text: 'Закуплено материалов' }),
         h('div.stat__value', { text: moneyShort(totals.purchases || 0) })
       ),
+      h('div.stat',
+        h('div.stat__label', { text: 'Наценка на материал' }),
+        h('div.stat__value', { text: moneyShort(totals.markup || 0) })
+      )
+    ));
+
+    bodyBox.appendChild(h('div.stats.analytics__stats',
       h('div.stat',
         h('div.stat__label', { text: 'Остаток работ' }),
         h('div.stat__value', { text: moneyShort(totals.remaining || 0) })

@@ -287,6 +287,45 @@ async function main() {
   }, leaderToken);
   check('вторая закупка добавлена', buy2.ok === true, buy2.ok ? '' : buy2.error);
 
+  // Несколько наименований и наценка — на отдельном объекте, чтобы не сбить
+  // ожидания остальных проверок по этому объекту.
+  const markupObject = await callApi('objects.create', {
+    title: 'ПРОВЕРКА НАЦЕНКИ', client: 'Проверка', address: 'г. Магас'
+  }, leaderToken);
+  const markupId = val(markupObject, 'data.object.id', '');
+
+  const batch = await callApi('purchases.addBatch', {
+    id: markupId,
+    items: [
+      { purchase: { date: '2026-10-15', material: 'Подрозетник', qty: 4, unit: 'шт', price: 45 } },
+      { purchase: { date: '2026-10-15', material: 'Клемма WAGO', qty: 10, unit: 'шт', price: 12 } }
+    ],
+    markup: true
+  }, leaderToken);
+  check('пакетная запись закупок', batch.ok === true && val(batch, 'data.purchases', []).length === 2,
+    batch.ok ? 'записей: ' + val(batch, 'data.purchases', []).length : batch.error);
+
+  // Наценка на материал: 10% от суммы закупок, но не меньше 1500 ₽.
+  const marked = await callApi('purchases.list', { id: markupId }, leaderToken);
+  const markupBase = val(marked, 'data.sum', 0);
+  const markupSum = val(marked, 'data.markupSum', 0);
+  check('наценка включилась вместе с записью', val(marked, 'data.markup', false) === true && markupSum > 0,
+    'закуплено ' + markupBase + ', наценка ' + markupSum);
+  check('наценка не меньше минимума', markupSum >= 1500, 'наценка ' + markupSum);
+  eq(val(marked, 'data.withMarkup', 0), Math.round((markupBase + markupSum) * 100) / 100,
+    'итог закупки с наценкой');
+
+  const markupOff = await callApi('objects.setMarkup', { id: markupId, on: false }, leaderToken);
+  check('наценка обнуляется',
+    markupOff.ok === true && val(markupOff, 'data.object.totals.markupSum', -1) === 0,
+    'наценка: ' + val(markupOff, 'data.object.totals.markupSum', 'нет данных'));
+
+  const markupOn = await callApi('objects.setMarkup', { id: markupId, on: true }, leaderToken);
+  check('наценка включается обратно',
+    markupOn.ok === true && val(markupOn, 'data.object.totals.markupSum', 0) > 0);
+
+  await callApi('objects.remove', { id: markupId }, leaderToken);
+
   const buyList = await callApi('purchases.list', { id: testObjectId }, leaderToken);
   check('список закупок получен: 2 позиции', val(buyList, 'data.total', -1) === 2,
     'позиций: ' + val(buyList, 'data.total', 'нет данных'));

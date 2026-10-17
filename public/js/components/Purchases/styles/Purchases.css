@@ -198,3 +198,172 @@
   color: var(--c-primary);
   text-decoration: none;
 }
+
+/* --- Форма: режим ввода и строки ---------------------------------------- */
+
+.purchase-form__modes {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--sp-2);
+  margin-bottom: var(--sp-2);
+}
+
+.purchase-form__mode {
+  padding: 9px var(--sp-3);
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-m);
+  background: var(--c-surface);
+  font-size: 13px;
+  color: var(--c-muted);
+  text-align: center;
+}
+
+.purchase-form__mode--active {
+  border-color: var(--c-primary);
+  background: var(--c-primary-soft);
+  color: var(--c-primary);
+  font-weight: 600;
+}
+
+/* Наименование, количество и цена — одной строкой. */
+.purchase-form__row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 92px 72px 24px;
+  gap: 5px;
+  align-items: center;
+  margin-bottom: 6px;
+}
+
+.purchase-form__name,
+.purchase-form__qty,
+.purchase-form__price {
+  padding-left: 9px;
+  padding-right: 9px;
+  font-size: 14px;
+}
+
+.purchase-form__qty-group {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.purchase-form__qty {
+  min-width: 0;
+  flex: 1;
+}
+
+.purchase-form__unit {
+  flex: none;
+  width: 44px;
+  margin-left: 3px;
+  padding-left: 2px;
+  padding-right: 2px;
+  font-size: 12px;
+}
+
+.purchase-form__unit-fixed {
+  flex: none;
+  margin-left: 4px;
+  font-size: 11px;
+  color: var(--c-muted);
+  white-space: nowrap;
+}
+
+.purchase-form__remove {
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--r-pill);
+  color: var(--c-faint);
+}
+
+.purchase-form__remove:active {
+  background: var(--c-surface-2);
+  color: var(--c-danger);
+}
+
+.purchase-form__add {
+  margin-top: var(--sp-2);
+}
+
+.purchase-form__rows-hint {
+  display: block;
+  margin-top: var(--sp-2);
+  font-size: 12px;
+  color: var(--c-muted);
+}
+
+/* --- Наценка на материал ------------------------------------------------ */
+
+.purchase-form__markup {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-3);
+  padding: var(--sp-3);
+  margin: var(--sp-3) 0;
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-m);
+  background: var(--c-surface-2);
+}
+
+.purchase-form__check {
+  flex: none;
+  width: 20px;
+  height: 20px;
+  margin-top: 1px;
+  accent-color: var(--c-primary);
+}
+
+.purchase-form__markup-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.purchase-form__markup-title {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.purchase-form__markup-hint {
+  font-size: 12px;
+  color: var(--c-muted);
+}
+
+/* --- Итоги: три блока в ряд -------------------------------------------- */
+
+.purchases__stats {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.purchases__markup {
+  position: relative;
+  border: 1px solid transparent;
+  text-align: left;
+  transition: border-color var(--t-fast), background var(--t-fast);
+}
+
+.purchases__markup:active {
+  background: var(--c-surface-2);
+}
+
+.purchases__markup--on {
+  border-color: var(--c-success);
+  background: var(--c-success-soft);
+}
+
+.purchases__markup-hint {
+  margin-top: 2px;
+  font-size: 11px;
+  color: var(--c-muted);
+  white-space: nowrap;
+}
+
+.purchases__markup--on .purchases__markup-hint {
+  color: var(--c-success);
+  font-weight: 600;
+}

@@ -20,34 +20,58 @@ import { describeError, ApiError } from '../api/apiClient.js';
 /** Что умеет очередь: вид записи → как её отправить. */
 const KINDS = {
   /**
-   * Закупка. Сначала загружаются все фото накладной (их может быть несколько),
-   * затем создаётся сама запись — чтобы ссылки уже существовали.
+   * Закупка. За один заход человек вносит несколько наименований, поэтому
+   * запись принимает либо список `items`, либо одну закупку `purchase`
+   * (так лежат старые записи в очереди на телефоне).
    *
-   * Поддерживаем и список `photos`, и одиночное `photo`: в очереди на телефоне
-   * могли остаться записи прежней версии приложения.
+   * Сначала загружаются все фото накладных, затем создаётся запись — чтобы
+   * ссылки уже существовали. Наценка на материал идёт вместе с записью.
    */
   purchase: async (payload) => {
-    const list = Array.isArray(payload.photos) && payload.photos.length
-      ? payload.photos
-      : (payload.photo && payload.photo.data ? [payload.photo] : []);
+    // Несколько наименований одной операцией.
+    if (Array.isArray(payload.items) && payload.items.length) {
+      const prepared = [];
 
-    const uploaded = [];
-    for (let i = 0; i < list.length; i++) {
-      const photo = list[i];
-      if (!photo || !photo.data) continue;
-      const result = await api.photoUpload({
-        id: payload.objectId,
-        name: photo.name || ('Накладная ' + (i + 1)),
-        mime: photo.mime || 'image/jpeg',
-        data: photo.data
-      });
-      uploaded.push({ link: result.url, id: result.fileId });
+      for (let i = 0; i < payload.items.length; i++) {
+        const item = payload.items[i] || {};
+        const photos = Array.isArray(item.photos) ? item.photos : [];
+        const uploaded = [];
+
+        for (let j = 0; j < photos.length; j++) {
+          const photo = photos[j];
+          if (!photo || !photo.data) continue;
+          const result = await api.photoUpload({
+            id: payload.objectId,
+            name: photo.name || ('Накладная ' + (i + 1)),
+            mime: photo.mime || 'image/jpeg',
+            data: photo.data
+          });
+          uploaded.push({ link: result.url, id: result.fileId });
+        }
+
+        prepared.push({
+          purchase: Object.assign({}, item.purchase, { photos: uploaded })
+        });
+      }
+
+      return api.purchasesAddBatch(payload.objectId, prepared, payload.markup);
     }
 
+    // Старая запись из очереди: одна закупка и одно фото.
+    let photo = null;
+    if (payload.photo && payload.photo.data) {
+      photo = await api.photoUpload({
+        id: payload.objectId,
+        name: payload.photo.name || 'Накладная',
+        mime: payload.photo.mime || 'image/jpeg',
+        data: payload.photo.data
+      });
+    }
     return api.purchasesAdd(payload.objectId, Object.assign({}, payload.purchase, {
-      photos: uploaded,
-      photo: uploaded.length ? '' : (payload.purchase.photo || ''),
-      photoId: uploaded.length ? '' : (payload.purchase.photoId || '')
+      photos: photo ? [{ link: photo.url, id: photo.fileId }] : [],
+      photo: photo ? photo.url : (payload.purchase.photo || ''),
+      photoId: photo ? photo.fileId : (payload.purchase.photoId || ''),
+      markup: payload.markup
     }));
   },
 

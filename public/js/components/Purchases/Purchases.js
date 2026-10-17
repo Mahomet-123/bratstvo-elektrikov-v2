@@ -25,6 +25,10 @@ import objectCache from '../../core/objectCache.js';
 import { sendNow, enqueue, isOfflineError } from '../../core/sync.js';
 import { createPhotoUploader } from '../PhotoUploader/PhotoUploader.js';
 
+/** Наценка на материал: процент от суммы закупок и её минимум (как на сервере). */
+const MARKUP_PERCENT = 10;
+const MARKUP_MIN = 1500;
+
 /** Единицы измерения, принятые в бригаде. */
 const UNITS = ['шт', 'м', 'м²', 'кг', 'л', 'упак', 'рул', 'компл', 'пач'];
 
@@ -41,40 +45,24 @@ export function createPurchases(props) {
   const id = options.id;
 
   let items = [];
-  let summary = { sum: 0, total: 0 };
+  let summary = { sum: 0, total: 0, markup: false, markupSum: 0 };
   let loading = true;
 
   /* --------------------------------------------------------------------------
    * Форма
    * ------------------------------------------------------------------------ */
 
+  /** Сколько строк показываем сразу: за один заход обычно берут несколько. */
+  const DEFAULT_ROWS = 3;
+
+  /** Режим ввода: 'material' — материал или товар, 'invoice' — целая накладная. */
+  let mode = 'material';
+
+  /** Строки формы: у каждой свои поля, чтобы значения не путались. */
+  const rows = [];
+  let rowSeq = 0;
+
   const dateInput = h('input.input', { type: 'date', value: today() });
-
-  const materialInput = h('input.input', {
-    type: 'text',
-    placeholder: 'Кабель, автомат, гофра…',
-    autocomplete: 'off'
-  });
-
-  const qtyInput = h('input.input', {
-    type: 'text',
-    inputmode: 'decimal',
-    placeholder: '0',
-    autocomplete: 'off',
-    oninput: updatePreview
-  });
-
-  const unitSelect = h('select.select', {},
-    UNITS.map((unit) => h('option', { value: unit, text: unit }))
-  );
-
-  const priceInput = h('input.input', {
-    type: 'text',
-    inputmode: 'decimal',
-    placeholder: '0,00',
-    autocomplete: 'off',
-    oninput: updatePreview
-  });
 
   const commentInput = h('textarea.textarea', {
     placeholder: 'Комментарий: где куплено, номер накладной',
@@ -86,6 +74,25 @@ export function createPurchases(props) {
   });
 
   const previewNode = h('div.purchase-form__preview');
+  const rowsBox = h('div.purchase-form__rows');
+  const rowsHint = h('div.purchase-form__rows-hint');
+
+  const modeButtons = {
+    material: h('button.purchase-form__mode', {
+      type: 'button',
+      onclick: () => setMode('material')
+    }, 'Материал или товар'),
+    invoice: h('button.purchase-form__mode', {
+      type: 'button',
+      onclick: () => setMode('invoice')
+    }, 'По накладной')
+  };
+
+  const markupInput = h('input.purchase-form__check', {
+    type: 'checkbox',
+    checked: false,
+    onchange: updatePreview
+  });
 
   const submitBtn = h('button.btn.btn--primary.btn--block', { type: 'submit' }, 'Записать закупку');
 
@@ -101,23 +108,24 @@ export function createPurchases(props) {
         h('span.field__label', { text: 'Дата' }),
         dateInput
       ),
-      h('label.field',
-        h('span.field__label', { text: 'Материал или товар' }),
-        materialInput
+      h('div.field',
+        h('span.field__label', { text: 'Что записываем' }),
+        h('div.purchase-form__modes', modeButtons.material, modeButtons.invoice),
+        h('span.field__hint', { text: 'По накладной: количество не нужно, единица — ЧЕК.' })
       ),
-      h('div.purchase-form__pair',
-        h('label.field',
-          h('span.field__label', { text: 'Количество' }),
-          qtyInput
+      h('div.field',
+        h('span.field__label', { text: 'Позиции' }),
+        rowsBox,
+        h('div.purchase-form__add',
+          h('button.btn.btn--ghost.btn--block', {
+            type: 'button',
+            onclick: () => { addRow(); updatePreview(); }
+          },
+            h('span.btn__icon', { html: iconSvg('plus', 18) }),
+            'Добавить строку'
+          )
         ),
-        h('label.field',
-          h('span.field__label', { text: 'Единица' }),
-          unitSelect
-        )
-      ),
-      h('label.field',
-        h('span.field__label', { text: 'Цена за единицу' }),
-        priceInput
+        rowsHint
       ),
       previewNode,
       h('label.field',
@@ -128,9 +136,161 @@ export function createPurchases(props) {
         h('span.field__label', { text: 'Фото накладной' }),
         uploader.el
       ),
+      h('label.purchase-form__markup',
+        markupInput,
+        h('span.purchase-form__markup-text',
+          h('span.purchase-form__markup-title', {
+            text: 'Наценка на материал (+' + MARKUP_PERCENT + '%, мин. ' + moneyShort(MARKUP_MIN) + ')'
+          }),
+          h('span.purchase-form__markup-hint', {
+            text: 'Считается от суммы закупок по объекту. Включить или обнулить можно и в итогах ниже.'
+          })
+        )
+      ),
       submitBtn
     )
   );
+
+  /** Переключение режима ввода. */
+  function setMode(next) {
+    if (mode === next) return;
+    mode = next;
+
+    modeButtons.material.classList.toggle('purchase-form__mode--active', mode === 'material');
+    modeButtons.invoice.classList.toggle('purchase-form__mode--active', mode === 'invoice');
+
+    // Перерисовываем строки: в режиме накладной у них другие подписи.
+    clearRows();
+    for (let i = 0; i < DEFAULT_ROWS; i++) addRow();
+    updatePreview();
+  }
+
+  /** Новая строка ввода. */
+  function addRow() {
+    const id = ++rowSeq;
+    const isInvoice = mode === 'invoice';
+
+    const nameInput = h('input.input.purchase-form__name', {
+      type: 'text',
+      autocomplete: 'off',
+      placeholder: isInvoice ? 'Номер или название накладной' : 'Кабель, автомат…',
+      oninput: updatePreview
+    });
+
+    const qtyInput = h('input.input.purchase-form__qty', {
+      type: 'text',
+      inputmode: 'decimal',
+      placeholder: isInvoice ? '1' : '0',
+      autocomplete: 'off',
+      disabled: isInvoice,
+      oninput: updatePreview
+    });
+    if (isInvoice) qtyInput.value = '1';
+
+    const unitSelect = h('select.select.purchase-form__unit', {},
+      UNITS.map((unit) => h('option', { value: unit, text: unit }))
+    );
+    unitSelect.value = 'шт';
+
+    const priceInput = h('input.input.purchase-form__price', {
+      type: 'text',
+      inputmode: 'decimal',
+      placeholder: isInvoice ? 'сумма' : '0,00',
+      autocomplete: 'off',
+      oninput: updatePreview
+    });
+
+    const qtyGroup = h('div.purchase-form__qty-group',
+      qtyInput,
+      isInvoice
+        ? h('span.purchase-form__unit-fixed', { text: 'ЧЕК' })
+        : unitSelect
+    );
+
+    const removeBtn = h('button.purchase-form__remove', {
+      type: 'button',
+      'aria-label': 'Убрать строку',
+      title: 'Убрать строку',
+      onclick: () => { removeRow(id); updatePreview(); }
+    }, h('span', { html: iconSvg('close', 15) }));
+
+    const el = h('div.purchase-form__row', nameInput, qtyGroup, priceInput, removeBtn);
+
+    rows.push({
+      id: id,
+      el: el,
+      nameInput: nameInput,
+      qtyInput: qtyInput,
+      unitSelect: unitSelect,
+      priceInput: priceInput
+    });
+
+    rowsBox.appendChild(el);
+  }
+
+  /** Убрать все строки разом (при смене режима). */
+  function clearRows() {
+    rows.forEach((row) => row.el.remove());
+    rows.length = 0;
+  }
+
+  /** Удаление строки. Последнюю не убираем: вводить будет некуда. */
+  function removeRow(id, silent) {
+    const index = rows.findIndex((row) => row.id === id);
+    if (index === -1) return;
+    if (rows.length <= 1) {
+      if (!silent) toastWarning('Хотя бы одна строка должна остаться');
+      return;
+    }
+
+    rows[index].el.remove();
+    rows.splice(index, 1);
+  }
+
+  /** Заполненные строки — пустые при отправке просто пропускаются. */
+  function filledRows() {
+    const out = [];
+
+    rows.forEach((row, index) => {
+      const name = row.nameInput.value.trim();
+      const priceRaw = row.priceInput.value.trim();
+      // В режиме накладной количество всегда «1», поэтому пустоту определяем
+      // по названию и сумме: иначе все строки считались бы заполненными.
+      const qtyRaw = mode === 'invoice' ? '' : row.qtyInput.value.trim();
+
+      // Строка пустая — её не записываем и место в таблице не занимаем.
+      if (!name && !qtyRaw && !priceRaw) return;
+
+      out.push({
+        index: index,
+        name: name,
+        qty: mode === 'invoice' ? 1 : parseNumber(qtyRaw),
+        price: parseNumber(priceRaw),
+        unit: mode === 'invoice' ? 'ЧЕК' : row.unitSelect.value
+      });
+    });
+
+    return out;
+  }
+
+  /** Предварительная сумма по введённым строкам. */
+  function updatePreview() {
+    const list = filledRows();
+    const sum = list.reduce((acc, row) => acc + (row.qty > 0 && row.price >= 0 ? row.qty * row.price : 0), 0);
+
+    setContent(previewNode, sum > 0
+      ? h('div.purchase-form__sum',
+        h('span.purchase-form__sum-label', {
+          text: list.length > 1 ? 'Сумма по строкам' : 'Сумма строки'
+        }),
+        h('span.purchase-form__sum-value', { text: money(sum) })
+      )
+      : null);
+
+    rowsHint.textContent = list.length
+      ? 'К записи: ' + countLabel(list.length, ['строка', 'строки', 'строк'])
+      : 'Пустые строки не записываются';
+  }
 
   /* --------------------------------------------------------------------------
    * Итог и список
@@ -148,27 +308,36 @@ export function createPurchases(props) {
     )
   );
 
-  /** Предварительная сумма по введённым числам. */
-  function updatePreview() {
-    const qty = parseNumber(qtyInput.value);
-    const price = parseNumber(priceInput.value);
-    const sum = qty > 0 && price >= 0 ? qty * price : 0;
-
-    setContent(previewNode, sum > 0
-      ? h('div.purchase-form__sum',
-        h('span.purchase-form__sum-label', { text: 'Сумма строки' }),
-        h('span.purchase-form__sum-value', { text: money(sum) })
-      )
-      : null);
-  }
-
-  /** Итог по всем закупкам. */
+  /**
+   * Итог по всем закупкам.
+   *
+   * Средний блок — наценка на материал. Он же переключатель: нажатие включает
+   * наценку от общей суммы закупок, повторное — обнуляет.
+   */
   function renderSummary() {
+    const sum = summary.sum || 0;
+    const markup = summary.markupSum || 0;
+
     setContent(summaryBox,
-      h('div.stats',
+      h('div.stats.purchases__stats',
         h('div.stat',
           h('div.stat__label', { text: 'Закуплено' }),
-          h('div.stat__value', { text: moneyShort(summary.sum || 0) })
+          h('div.stat__value', { text: moneyShort(sum) })
+        ),
+        h('button.stat.purchases__markup', {
+          type: 'button',
+          class: summary.markup ? 'purchases__markup--on' : '',
+          'aria-pressed': summary.markup ? 'true' : 'false',
+          title: summary.markup
+            ? 'Наценка включена. Нажмите, чтобы обнулить'
+            : 'Нажмите, чтобы начислить наценку на материал',
+          onclick: (event) => toggleMarkup(event.currentTarget)
+        },
+          h('div.stat__label', { text: 'Итог закупки' }),
+          h('div.stat__value', { text: moneyShort(sum + markup) }),
+          h('div.purchases__markup-hint', {
+            text: markup > 0 ? 'наценка ' + moneyShort(markup) : 'наценка 0'
+          })
         ),
         h('div.stat',
           h('div.stat__label', { text: 'Записей' }),
@@ -176,6 +345,30 @@ export function createPurchases(props) {
         )
       )
     );
+  }
+
+  /** Включить или обнулить наценку на материал по объекту. */
+  async function toggleMarkup(button) {
+    const next = !summary.markup;
+
+    await runBusy(button, next ? 'Начисляем…' : 'Обнуляем…', async () => {
+      try {
+        const result = await api.objectSetMarkup(id, next);
+        summary.markup = next;
+        summary.markupSum = result && result.object && result.object.totals
+          ? result.object.totals.markupSum
+          : 0;
+
+        markupInput.checked = next;
+        objectCache.markStale(id);
+        renderSummary();
+        toastSuccess(next
+          ? 'Наценка на материал: ' + moneyShort(summary.markupSum)
+          : 'Наценка на материал обнулена');
+      } catch (error) {
+        toastError(describeError(error));
+      }
+    });
   }
 
   /** Список закупок. */
@@ -287,7 +480,15 @@ export function createPurchases(props) {
   function applyPurchases(data) {
     items = mergePending((data && data.purchases) || []);
     const sum = items.reduce((acc, item) => acc + (Number(item.sum) || 0), 0);
-    summary = { sum: Math.round(sum * 100) / 100, total: items.length };
+    const markup = Boolean(data && data.markup);
+    summary = {
+      sum: Math.round(sum * 100) / 100,
+      total: items.length,
+      markup: markup,
+      // Сумму наценки берём с сервера: правило должно считаться в одном месте.
+      markupSum: Number(data && data.markupSum) || (markup ? calcMarkup(sum) : 0)
+    };
+    markupInput.checked = markup;
     loading = false;
     renderSummary();
     renderList();
@@ -304,7 +505,13 @@ export function createPurchases(props) {
     // Закупки, ждущие отправки, в кэш не кладём: они хранятся отдельно
     // и подмешиваются заново — иначе после отправки они задвоятся.
     const saved = items.filter((item) => !item.pending);
-    objectCache.put(id, 'purchases', { purchases: saved, sum: summary.sum, total: saved.length });
+    objectCache.put(id, 'purchases', {
+      purchases: saved,
+      sum: summary.sum,
+      total: saved.length,
+      markup: summary.markup,
+      markupSum: summary.markupSum
+    });
   }
 
   /** Добавить к списку с сервера закупки, которые ещё ждут отправки. */
@@ -331,43 +538,62 @@ export function createPurchases(props) {
   }
 
   /** Запись закупки. */
+  /** Запись закупки: несколько строк одной операцией. */
   async function submit() {
-    const material = materialInput.value.trim();
-    const qty = parseNumber(qtyInput.value);
-    const price = parseNumber(priceInput.value);
+    const list = filledRows();
 
-    if (!material) {
-      toastError('Укажите материал или товар');
-      materialInput.focus();
+    if (!list.length) {
+      toastError('Заполните хотя бы одну строку');
       return;
     }
-    if (!(qty > 0)) {
-      toastError('Количество должно быть больше нуля');
-      qtyInput.focus();
-      return;
-    }
-    if (!(price >= 0)) {
-      toastError('Укажите цену за единицу');
-      priceInput.focus();
-      return;
+
+    // Проверяем всё до отправки. Пустые строки уже отброшены — они не станут
+    // лишними строками в таблице.
+    for (let i = 0; i < list.length; i++) {
+      const row = list[i];
+      const rowNode = rows[row.index];
+
+      if (!row.name) {
+        toastError('Строка ' + (row.index + 1) + ': укажите ' +
+          (mode === 'invoice' ? 'номер или название накладной' : 'материал'));
+        rowNode.nameInput.focus();
+        return;
+      }
+      if (mode === 'material' && !(row.qty > 0)) {
+        toastError('Строка ' + (row.index + 1) + ': количество должно быть больше нуля');
+        rowNode.qtyInput.focus();
+        return;
+      }
+      if (!(row.price >= 0)) {
+        toastError('Строка ' + (row.index + 1) + ': укажите цену');
+        rowNode.priceInput.focus();
+        return;
+      }
     }
 
     const photos = uploader.getPhotos();
+    const comment = commentInput.value.trim();
+    const date = dateInput.value || today();
+    const markup = markupInput.checked;
+
     const payload = {
       objectId: id,
-      purchase: {
-        date: dateInput.value || today(),
-        material: material,
-        qty: qty,
-        unit: unitSelect.value,
-        price: price,
-        comment: commentInput.value.trim()
-      },
-      photos: photos.map((photo) => ({
-        name: photo.name,
-        mime: photo.mime,
-        data: photo.data
-      }))
+      items: list.map((row) => ({
+        purchase: {
+          date: date,
+          material: row.name,
+          qty: row.qty,
+          unit: row.unit,
+          price: row.price,
+          comment: comment
+        },
+        photos: photos.map((photo) => ({
+          name: photo.name,
+          mime: photo.mime,
+          data: photo.data
+        }))
+      })),
+      markup: markup
     };
 
     const busyLabel = photos.length
@@ -377,36 +603,53 @@ export function createPurchases(props) {
     await runBusy(submitBtn, busyLabel, async () => {
       try {
         const result = await sendNow('purchase', payload);
-        const sum = result && result.purchase ? result.purchase.sum : qty * price;
-        toastSuccess('Закупка записана: ' + moneyShort(sum));
+        const saved = (result && result.purchases) || [];
+        const total = saved.reduce((acc, item) => acc + (Number(item.sum) || 0), 0);
+
+        toastSuccess(saved.length > 1
+          ? 'Записано строк: ' + saved.length + ' на ' + moneyShort(total)
+          : 'Закупка записана: ' + moneyShort(total));
+
         resetForm();
 
-        // Закупка уже пришла с сервера — показываем её без перезагрузки списка.
-        if (result && result.purchase) appendLocal(result.purchase);
-        else await load();
+        if (saved.length) {
+          saved.forEach((item) => appendLocal(item));
+          if (markup) {
+            summary.markup = true;
+            summary.markupSum = calcMarkup(summary.sum);
+          }
+          renderSummary();
+        } else {
+          await load();
+        }
       } catch (error) {
         if (isOfflineError(error)) {
-          // Связи нет — закупка вместе с фото остаётся на телефоне и уйдёт сама.
-          // Показываем её сразу: человек должен видеть свою работу.
-          const queueId = await enqueue('purchase', payload, 'Закупка: ' + material);
-          const local = {
-            id: 'pending-' + queueId,
-            queueId: queueId,
-            date: payload.purchase.date,
-            material: material,
-            qty: qty,
-            unit: payload.purchase.unit,
-            price: price,
-            sum: Math.round(qty * price * 100) / 100,
-            comment: payload.purchase.comment,
-            photos: [],
-            photoCount: photos.length,
-            pending: true,
-            created: new Date().toISOString()
-          };
-          objectCache.addPending(id, 'purchase', local);
-          appendLocal(local);
-          toastWarning('Нет сети — закупка сохранена на телефоне и отправится сама, когда появится связь', 6000);
+          // Связи нет — закупки вместе с фото остаются на телефоне и уйдут сами.
+          const queueId = await enqueue('purchase', payload,
+            'Закупки: ' + list.length + ' шт.');
+          const created = new Date().toISOString();
+
+          list.forEach((row) => {
+            const local = {
+              id: 'pending-' + queueId + '-' + row.index,
+              queueId: queueId,
+              date: date,
+              material: row.name,
+              qty: row.qty,
+              unit: row.unit,
+              price: row.price,
+              sum: Math.round(row.qty * row.price * 100) / 100,
+              comment: comment,
+              photos: [],
+              photoCount: photos.length,
+              pending: true,
+              created: created
+            };
+            objectCache.addPending(id, 'purchase', local);
+            appendLocal(local);
+          });
+
+          toastWarning('Нет сети — закупки сохранены на телефоне и отправятся сами', 6000);
           resetForm();
         } else {
           toastError(describeError(error));
@@ -415,15 +658,29 @@ export function createPurchases(props) {
     });
   }
 
-  /** Очистка формы: дату и единицу оставляем — удобно вводить подряд. */
+  /** Наценка на материал от суммы закупок — как считает сервер. */
+  function calcMarkup(base) {
+    const sum = Number(base) || 0;
+    if (!(sum > 0)) return 0;
+    return Math.max(Math.round(sum * MARKUP_PERCENT) / 100, MARKUP_MIN);
+  }
+
+  /** Очистка формы: дату оставляем — удобно вводить подряд. */
   function resetForm() {
-    materialInput.value = '';
-    qtyInput.value = '';
-    priceInput.value = '';
+    rows.forEach((row) => {
+      row.nameInput.value = '';
+      row.qtyInput.value = mode === 'invoice' ? '1' : '';
+      row.priceInput.value = '';
+    });
+
+    // Лишние строки убираем, недостающие возвращаем: форма снова как при входе.
+    while (rows.length > DEFAULT_ROWS) removeRow(rows[rows.length - 1].id, true);
+    while (rows.length < DEFAULT_ROWS) addRow();
+
     commentInput.value = '';
     uploader.clear();
     updatePreview();
-    materialInput.focus();
+    if (rows.length) rows[0].nameInput.focus();
   }
 
   /** Удаление закупки. */
@@ -500,6 +757,10 @@ export function createPurchases(props) {
   }
 
   loadStyles('js/components/Purchases/styles/Purchases.css');
+
+  // Режим по умолчанию и три готовые строки: обычно за заход берут несколько.
+  modeButtons.material.classList.add('purchase-form__mode--active');
+  for (let i = 0; i < DEFAULT_ROWS; i++) addRow();
 
   renderSummary();
   renderList();

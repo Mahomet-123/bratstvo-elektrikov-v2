@@ -231,6 +231,14 @@ const ROUTES_ = {
     }
   },
 
+  'objects.setMarkup': {
+    auth: 'user',
+    handler: function (ctx) {
+      const p = ctx.payload || {};
+      return setObjectMarkup_(ctx.token, p.id, Boolean(p.on));
+    }
+  },
+
   'objects.remove': {
     auth: 'leader',
     handler: function (ctx) {
@@ -301,6 +309,14 @@ const ROUTES_ = {
     handler: function (ctx) {
       const p = ctx.payload || {};
       return addPurchase_(ctx.token, p.id, p.purchase || {});
+    }
+  },
+
+  'purchases.addBatch': {
+    auth: 'user',
+    handler: function (ctx) {
+      const p = ctx.payload || {};
+      return addPurchasesBatch_(ctx.token, p.id, p.items, p.markup);
     }
   },
 
