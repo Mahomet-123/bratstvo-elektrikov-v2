@@ -18,6 +18,7 @@ import { toastSuccess, toastError, toastWarning } from '../../core/toast.js';
 import { confirmDialog } from '../../core/modal.js';
 import { describeError } from '../../api/apiClient.js';
 import { api } from '../../api/endpoints.js';
+import { runBusy } from '../../core/busy.js';
 import bundle from '../../core/bundle.js';
 import { moneyShort, dateShort, countLabel } from '../../core/format.js';
 import { statusBadge } from '../common/badges.js';
@@ -34,7 +35,6 @@ export function createArchive(props) {
 
   let data = null;
   let loading = true;
-  let busy = '';
 
   const bodyBox = h('div.archive__body');
   const el = h('div.page.archive', bodyBox);
@@ -125,9 +125,8 @@ export function createArchive(props) {
         h('div.archive__actions',
           h('button.btn.btn--ghost.btn--block', {
             type: 'button',
-            disabled: busy === archive.id,
-            onclick: () => cleanup(archive)
-          }, busy === archive.id ? 'Убираем…' : 'Убрать лишние листы'),
+            onclick: (event) => cleanup(archive, event.currentTarget)
+          }, 'Убрать лишние листы'),
           archive.url
             ? h('a.btn.btn--quiet.btn--block', {
               href: archive.url,
@@ -160,7 +159,7 @@ export function createArchive(props) {
       h('span.row__side',
         h('button.btn.btn--quiet.btn--sm', {
           type: 'button',
-          onclick: () => restore(item)
+          onclick: (event) => restore(item, event.currentTarget)
         }, 'Вернуть в работу')
       )
     );
@@ -210,7 +209,7 @@ export function createArchive(props) {
   }
 
   /** Возврат объекта в работу. */
-  async function restore(item) {
+  async function restore(item, button) {
     const confirmed = await confirmDialog({
       title: 'Вернуть объект в работу?',
       text: 'Объект № ' + item.numberLabel + ' «' + (item.title || '') + '» снова станет активным, ' +
@@ -219,19 +218,21 @@ export function createArchive(props) {
     });
     if (!confirmed) return;
 
-    try {
-      const result = await api.objectRestore(item.id);
-      // Объект вернулся в работу — пакет данных устарел, обновляем сразу.
-      await bundle.refresh();
-      toastSuccess(result.message || 'Объект снова в работе');
-      await load();
-    } catch (error) {
-      toastError(describeError(error));
-    }
+    await runBusy(button, 'Возвращаем…', async () => {
+      try {
+        const result = await api.objectRestore(item.id);
+        // Объект вернулся в работу — пакет данных устарел, обновляем сразу.
+        await bundle.refresh();
+        toastSuccess(result.message || 'Объект снова в работе');
+        await load();
+      } catch (error) {
+        toastError(describeError(error));
+      }
+    });
   }
 
   /** Уборка лишних листов в таблице-архиве. */
-  async function cleanup(archive) {
+  async function cleanup(archive, button) {
     const confirmed = await confirmDialog({
       title: 'Убрать лишние листы?',
       text: 'В таблице «' + archive.name + '» удалятся листы, на которые не ссылается ни один объект. ' +
@@ -241,25 +242,21 @@ export function createArchive(props) {
     });
     if (!confirmed) return;
 
-    busy = archive.id;
-    render();
-
-    try {
-      const result = await api.archiveCleanup(archive.id);
-      if (result.removed && result.removed.length) {
-        toastSuccess(result.message || 'Убрано листов: ' + result.removed.length);
-      } else {
-        toastWarning(result.message || 'Лишних листов не было');
+    await runBusy(button, 'Убираем…', async () => {
+      try {
+        const result = await api.archiveCleanup(archive.id);
+        if (result.removed && result.removed.length) {
+          toastSuccess(result.message || 'Убрано листов: ' + result.removed.length);
+        } else {
+          toastWarning(result.message || 'Лишних листов не было');
+        }
+        // Состав архива изменился — пакет данных устарел.
+        await bundle.refresh();
+        await load();
+      } catch (error) {
+        toastError(describeError(error));
       }
-      // Состав архива изменился — пакет данных устарел.
-      await bundle.refresh();
-      await load();
-    } catch (error) {
-      toastError(describeError(error));
-    } finally {
-      busy = '';
-      render();
-    }
+    });
   }
 
   loadStyles('js/components/Archive/styles/Archive.css');

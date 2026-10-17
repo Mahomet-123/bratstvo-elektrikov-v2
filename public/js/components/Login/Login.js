@@ -11,6 +11,7 @@ import { h, setContent } from '../../core/dom.js';
 import { loadStyles } from '../../core/styles.js';
 import { iconSvg } from '../../core/icons.js';
 import { toastError } from '../../core/toast.js';
+import { runBusy } from '../../core/busy.js';
 import { describeError } from '../../api/apiClient.js';
 import { api } from '../../api/endpoints.js';
 import { CONFIG } from '../../config.js';
@@ -141,22 +142,18 @@ export function createLogin(props) {
       return;
     }
 
-    submitBtn.disabled = true;
-    submitBtn.textContent = 'Входим…';
-
-    try {
-      const result = await api.login(name, code);
-      if (typeof options.onSuccess === 'function') options.onSuccess(result);
-    } catch (error) {
-      const message = describeError(error);
-      showError(message);
-      if (!error.offline) toastError(message);
-      codeInput.value = '';
-      codeInput.focus();
-    } finally {
-      submitBtn.disabled = false;
-      submitBtn.textContent = 'Войти';
-    }
+    await runBusy(submitBtn, 'Входим…', async () => {
+      try {
+        const result = await api.login(name, code);
+        if (typeof options.onSuccess === 'function') options.onSuccess(result);
+      } catch (error) {
+        const message = describeError(error);
+        showError(message);
+        if (!error.offline) toastError(message);
+        codeInput.value = '';
+        codeInput.focus();
+      }
+    });
   });
 
   // Подключение стилей и фоновые проверки.

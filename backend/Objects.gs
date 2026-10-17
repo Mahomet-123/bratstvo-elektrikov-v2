@@ -352,6 +352,15 @@ function dayView_(row) {
  * @return {Object}
  */
 function purchaseView_(row) {
+  // Фотографий накладной может быть несколько: ссылки лежат в одной ячейке
+  // списком. Первую отдаём ещё и отдельными полями — старые места (отчёт,
+  // кабинет) продолжают работать без изменений.
+  const links = splitCellList_(row['фото']);
+  const ids = splitCellList_(row['фото id']);
+  const photos = links.map(function (link, index) {
+    return { link: link, id: ids[index] || '' };
+  });
+
   return {
     id: str_(row['id']),
     date: isoDate_(row['дата']) || str_(row['дата']),
@@ -361,8 +370,10 @@ function purchaseView_(row) {
     price: round2_(num_(row['цена'], 0)),
     sum: round2_(num_(row['сумма'], 0)),
     comment: str_(row['комментарий']),
-    photo: str_(row['фото']),
-    photoId: str_(row['фото id']),
+    photo: links[0] || '',
+    photoId: ids[0] || '',
+    photos: photos,
+    photoCount: photos.length,
     created: str_(row['создано'])
   };
 }

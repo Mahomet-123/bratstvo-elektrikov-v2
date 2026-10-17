@@ -14,27 +14,40 @@ import { store } from './store.js';
 import { log } from './logger.js';
 import * as queue from './queue.js';
 import { api } from '../api/endpoints.js';
+import objectCache from './objectCache.js';
 import { describeError, ApiError } from '../api/apiClient.js';
 
 /** Что умеет очередь: вид записи → как её отправить. */
 const KINDS = {
   /**
-   * Закупка. Сначала загружается фото накладной (если оно есть),
-   * затем создаётся сама запись — чтобы фото уже лежало на Диске.
+   * Закупка. Сначала загружаются все фото накладной (их может быть несколько),
+   * затем создаётся сама запись — чтобы ссылки уже существовали.
+   *
+   * Поддерживаем и список `photos`, и одиночное `photo`: в очереди на телефоне
+   * могли остаться записи прежней версии приложения.
    */
   purchase: async (payload) => {
-    let photo = null;
-    if (payload.photo && payload.photo.data) {
-      photo = await api.photoUpload({
+    const list = Array.isArray(payload.photos) && payload.photos.length
+      ? payload.photos
+      : (payload.photo && payload.photo.data ? [payload.photo] : []);
+
+    const uploaded = [];
+    for (let i = 0; i < list.length; i++) {
+      const photo = list[i];
+      if (!photo || !photo.data) continue;
+      const result = await api.photoUpload({
         id: payload.objectId,
-        name: payload.photo.name || 'Накладная',
-        mime: payload.photo.mime || 'image/jpeg',
-        data: payload.photo.data
+        name: photo.name || ('Накладная ' + (i + 1)),
+        mime: photo.mime || 'image/jpeg',
+        data: photo.data
       });
+      uploaded.push({ link: result.url, id: result.fileId });
     }
+
     return api.purchasesAdd(payload.objectId, Object.assign({}, payload.purchase, {
-      photo: photo ? photo.url : (payload.purchase.photo || ''),
-      photoId: photo ? photo.fileId : (payload.purchase.photoId || '')
+      photos: uploaded,
+      photo: uploaded.length ? '' : (payload.purchase.photo || ''),
+      photoId: uploaded.length ? '' : (payload.purchase.photoId || '')
     }));
   },
 
@@ -200,6 +213,12 @@ export async function flush(options) {
       try {
         await handler(item.payload || {});
         await queue.remove(item.id);
+        // Запись ушла на сервер: убираем её из списка ждущих и помечаем
+        // данные объекта устаревшими — при следующем заходе подтянутся свежие.
+        if (item.objectId) {
+          objectCache.dropPending(item.objectId, item.kind, item.id);
+          objectCache.markStale(item.objectId);
+        }
         result.sent++;
         store.patch({ queueError: '' });
       } catch (error) {

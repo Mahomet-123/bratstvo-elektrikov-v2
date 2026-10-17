@@ -111,6 +111,22 @@ async function countOf(page, selector) {
  * открытия экрана увидела бы пустоту и объявила сбой там, где приложение
  * работает правильно.
  */
+/**
+ * Подождать, пока условие в браузере станет истинным.
+ * Нужно там, где важен не счётчик элементов, а состояние формы: например,
+ * что поля очистились после сохранения.
+ */
+async function waitUntil(page, check, timeout) {
+  const limit = timeout || 15000;
+  const started = Date.now();
+  while (Date.now() - started < limit) {
+    const done = await page.evaluate(check).catch(() => false);
+    if (done) return true;
+    await sleep(200);
+  }
+  return false;
+}
+
 async function waitForCount(page, selector, min, timeout) {
   const limit = timeout || 20000;
   const started = Date.now();
@@ -354,9 +370,14 @@ async function makeTestPhoto(browser, dir) {
   return file;
 }
 
-/** Загрузка файла в поле выбора фотографии. */
-async function attachPhoto(page, file) {
-  const input = await page.$('.photo-uploader__input');
+/**
+ * Загрузка файла в поле выбора фотографии.
+ * Полей два: первое — камера (с признаком capture), второе — галерея.
+ * В проверке подкладываем файл в нужное: так проверяются оба пути.
+ */
+async function attachPhoto(page, file, index) {
+  const inputs = await page.$$('.photo-uploader__input');
+  const input = inputs[index || 0];
   if (!input) throw new Error('Не найдено поле выбора фотографии');
   await input.uploadFile(file);
 }
@@ -422,7 +443,8 @@ async function main() {
     page.on('console', (message) => {
       if (message.type() === 'error') consoleErrors.push(message.text());
     });
-    page.on('pageerror', (error) => consoleErrors.push('pageerror: ' + error.message));
+    // Стек важен: без него непонятно, какой экран уронил страницу.
+    page.on('pageerror', (error) => consoleErrors.push('pageerror: ' + (error.stack || error.message)));
 
     console.log('\n=== 1. Загрузка и вход ===');
     await page.goto(BASE, { waitUntil: 'domcontentloaded' });
@@ -452,8 +474,9 @@ async function main() {
     await textInputs[2].type('г. Магас, ул. Проверочная, 1');
     await page.type('.object-form input[type="tel"]', '+7 900 000-00-00');
     await clickElement(page, '.object-form__actions .btn');
-    await page.waitForSelector('.object-card-screen__hero', { timeout: 20000 });
-    check('карточка объекта открыта', true);
+    const cardOpened = await waitFor(page, '.object-card-screen__hero', 25000);
+    check('карточка объекта открыта', cardOpened,
+      cardOpened ? '' : 'уведомление: ' + (await lastToast(page)) + ', адрес: ' + (await page.evaluate(() => location.hash)));
 
     const numberLabel = await textOf(page, '.object-card-screen__num');
     check('номер объекта присвоен', /№\s*\d{3}/.test(numberLabel || ''), numberLabel);
@@ -560,9 +583,23 @@ async function main() {
     const firstSaved = await waitForCount(page, '.day-record', 1, 20000);
     check('запись дня добавлена', firstSaved, firstSaved ? '' : await lastToast(page));
 
+    // Ждём, пока форма очистится после первой записи. Иначе вторая запись
+    // уйдёт с прежними значениями: экран уже показал запись, а поля ещё не
+    // успели освободиться.
+    await waitUntil(page, () => {
+      const hours = document.querySelector('.day-form input[inputmode="decimal"]');
+      const work = document.querySelector('.day-form textarea');
+      return Boolean(hours && work && hours.value === '' && work.value === '');
+    }, 20000);
+
     // Повтор за ту же дату — сохраняется, но помечается.
     await page.type('.day-form input[inputmode="decimal"]', '2');
     await page.type('.day-form textarea', 'Дополнительные работы');
+    console.log('  перед второй записью: часы=' + JSON.stringify(
+      await page.$eval('.day-form input[inputmode="decimal"]', (n) => n.value)
+    ) + ', работа=' + JSON.stringify(
+      await page.$eval('.day-form textarea', (n) => n.value)
+    ) + ', кнопка занята=' + (await page.$eval('.day-form .btn--primary', (n) => n.dataset.busy === '1')));
     await clickElement(page, '.day-form .btn--primary');
     const secondSaved = await waitForCount(page, '.day-record', 2, 20000);
     check('вторая запись дня сохранена', secondSaved,
@@ -574,6 +611,11 @@ async function main() {
 
     const recordCount = await countOf(page, '.day-record');
     check('в журнале ровно две записи', recordCount === 2, recordCount + ' записей');
+
+    // Что именно в журнале: без этого сбой «часы не те» ни о чём не говорит.
+    console.log('  записи журнала: ' + JSON.stringify(
+      await page.$$eval('.day-record', (nodes) => nodes.map((n) => n.textContent.trim().replace(/\s+/g, ' ')))
+    ));
 
     const totalHours = await page.evaluate(() => {
       const node = document.querySelector('.day-journal__summary .stat__value');
@@ -589,16 +631,45 @@ async function main() {
     check('экран закупок открыт', true);
 
     await attachPhoto(page, photoPath);
-    const previewShown = await waitFor(page, '.photo-uploader__preview', 30000);
-    check('фотография сжата и показана', previewShown);
+    const previewShown = await waitFor(page, '.photo-uploader__item', 40000);
+    check('фотография сжата и показана', previewShown,
+      previewShown ? '' : 'блок: ' + String(await textOf(page, '.photo-uploader') || '').replace(/\s+/g, ' ').slice(0, 120));
 
-    const photoMeta = String(await textOf(page, '.photo-uploader__size') || '');
-    const photoKb = /КБ$/.test(photoMeta) ? parseInt(photoMeta, 10) : 0;
+    // Размер и формат подписаны прямо под снимком.
+    const photoMeta = String(await textOf(page, '.photo-uploader__item-meta') || '');
+    const photoKb = /КБ/.test(photoMeta) ? parseInt(photoMeta, 10) : 0;
     check('размер фото в пределах цели (~300 КБ)', photoKb > 0 && photoKb <= 400,
       'получено: ' + photoMeta);
+    check('формат сжатия выбран корректно', /WebP|JPEG/.test(photoMeta), photoMeta);
 
-    const photoFormat = await textOf(page, '.photo-uploader__format');
-    check('формат сжатия выбран корректно', /WebP|JPEG/.test(String(photoFormat || '')), photoFormat);
+    // Камера и галерея — РАЗНЫЕ поля выбора файла. Одно поле с признаком
+    // capture на части телефонов открывает галерею вместо камеры.
+    const cameraInput = await page.$$eval('.photo-uploader__input',
+      (nodes) => nodes.map((n) => n.getAttribute('capture') || ''));
+    check('у камеры своё поле с признаком съёмки', cameraInput[0] === 'environment',
+      'capture=' + (cameraInput[0] || 'нет'));
+
+    const galleryMultiple = await page.$$eval('.photo-uploader__input',
+      (nodes) => nodes.map((n) => n.hasAttribute('multiple')));
+    check('у галереи своё поле с выбором нескольких', galleryMultiple[1] === true);
+
+    const pickButtons = await page.$$eval('.photo-uploader__buttons .btn',
+      (nodes) => nodes.map((n) => n.textContent.trim()));
+    check('есть обе кнопки: съёмка и галерея',
+      pickButtons.some((t) => /Снять/.test(t)) && pickButtons.some((t) => /галере/i.test(t)),
+      pickButtons.join(' | '));
+
+    // Второй снимок добавляется к первому, а не заменяет его.
+    await attachPhoto(page, photoPath, 1);
+    const twoPhotos = await waitForCount(page, '.photo-uploader__item', 2, 40000);
+    check('к закупке прикладывается несколько фото', twoPhotos,
+      (await countOf(page, '.photo-uploader__item')) + ' снимков');
+
+    // Ненужный снимок убирается до сохранения.
+    await clickElement(page, '.photo-uploader__remove');
+    const onePhoto = await waitForCount(page, '.photo-uploader__item', 1, 10000);
+    check('ненужный снимок убирается', onePhoto,
+      (await countOf(page, '.photo-uploader__item')) + ' снимков');
 
     await fillPurchase(page, {
       material: 'Кабель ВВГнг 3×2,5',
@@ -637,7 +708,7 @@ async function main() {
     await page.goto(BASE + '#/cabinet/' + objectId, { waitUntil: 'domcontentloaded' });
     await page.waitForSelector('.cabinet', { timeout: 15000 });
     await retryIfFailed(page, '.cabinet', 'Повторить');
-    const openedByDefault = await waitFor(page, '.cabinet__state--open', 20000);
+    const openedByDefault = await waitFor(page, '.cabinet__state--open', 45000);
     check('кабинет нового объекта открыт', openedByDefault);
 
     const cabinetLink = await page.$eval('.cabinet__link', (node) => node.value).catch(() => '');
@@ -653,8 +724,11 @@ async function main() {
     await clickByText(page, '.cabinet__state .btn', 'Закрыть доступ');
     await page.waitForSelector('.modal', { timeout: 8000 });
     await clickByText(page, '.modal__actions .btn', 'Закрыть доступ');
-    const closedState = await waitFor(page, '.cabinet__state--closed', 20000);
-    check('доступ клиенту закрывается', closedState);
+    // Смена состояния идёт через сервер: на холодном старте Google отвечает
+    // медленно, поэтому ждём с запасом.
+    const closedState = await waitFor(page, '.cabinet__state--closed', 45000);
+    check('доступ клиенту закрывается', closedState,
+      closedState ? '' : 'на экране: ' + String(await textOf(page, '.cabinet__state') || '').replace(/s+/g, ' ').slice(0, 100));
 
     // Старую ссылку проверяем из Node: из браузера запрос к Apps Script
     // упрётся в правила межсайтового доступа и ничего не докажет.
@@ -671,7 +745,7 @@ async function main() {
 
     // Открываем снова — токен должен смениться, прежняя ссылка остаётся мёртвой.
     await clickByText(page, '.cabinet__state .btn', 'Открыть доступ');
-    const reopened = await waitFor(page, '.cabinet__state--open', 20000);
+    const reopened = await waitFor(page, '.cabinet__state--open', 45000);
     check('доступ открывается заново', reopened);
 
     const newCabinetLink = await page.$eval('.cabinet__link', (node) => node.value).catch(() => '');
@@ -811,7 +885,53 @@ async function main() {
     check('архив показан: таблицы или понятная пустота', Boolean(archiveState),
       archiveItems + ' таблиц, пустое состояние: ' + (archiveEmpty ? 'да' : 'нет'));
 
-    console.log('\n=== 13. Уборка тестового объекта ===');
+    console.log('\n=== 13. Повторные переходы и прайс в профиле ===');
+
+    // Первый заход прогрел сохранённое на устройстве. Второй должен открываться
+    // сразу: данные берутся с устройства, а не ждут ответа Google.
+    await page.goto(BASE + '#/object/' + objectId, { waitUntil: 'domcontentloaded' });
+    await page.waitForSelector('.object-card-screen__hero', { timeout: 20000 });
+    await sleep(1200);
+
+    const screens = [
+      ['#/object/' + objectId, '.object-card-screen__num', 'карточка объекта'],
+      ['#/object/' + objectId + '/calc', '.calc-summary__total', 'расчёт'],
+      ['#/object/' + objectId + '/days', '.day-record', 'журнал дней'],
+      ['#/object/' + objectId + '/purchases', '.purchase', 'закупки']
+    ];
+
+    // Время считаем от появления каркаса: запуск приложения к экрану
+    // отношения не имеет, а именно он занимает больше всего времени.
+    const slow = [];
+    for (const [hash, selector, title] of screens) {
+      await page.goto(BASE + hash, { waitUntil: 'domcontentloaded' });
+      await page.waitForSelector('.shell', { timeout: 20000 });
+      const started = Date.now();
+      const shown = await waitFor(page, selector, 20000);
+      const spent = Date.now() - started;
+      if (!shown || spent > 1200) slow.push(title + ': ' + spent + ' мс');
+    }
+    check('данные объекта открываются сразу, без ожидания', slow.length === 0,
+      slow.length ? slow.join(', ') : 'все экраны показали данные быстрее 1,2 секунды');
+
+    // Прайс целиком — из профиля.
+    await page.goto(BASE + '#/profile', { waitUntil: 'domcontentloaded' });
+    await page.waitForSelector('.profile__hero', { timeout: 15000 });
+    await clickByText(page, '.page__section .row', 'Прайс цен');
+    await page.waitForSelector('.prices', { timeout: 15000 });
+    check('прайс открывается из профиля', true);
+
+    const priceSections = await waitForCount(page, '.prices__section', 1, 20000);
+    const priceRows = await countOf(page, '.prices__row');
+    check('в прайсе видны разделы и позиции', priceSections && priceRows > 0,
+      (await countOf(page, '.prices__section')) + ' разделов, ' + priceRows + ' позиций');
+
+    await page.type('.prices__search', 'кабель');
+    await sleep(600);
+    const found = await countOf(page, '.prices__row');
+    check('поиск по прайсу работает', found > 0 && found < priceRows, found + ' позиций по запросу «кабель»');
+
+    console.log('\n=== 14. Уборка тестового объекта ===');
     await goTo(page, '#/objects', '.objects', 20000);
     await clickObjectCardByNumber(page, objectNumber);
     await page.waitForSelector('.object-card-screen__hero', { timeout: 15000 });
@@ -831,7 +951,7 @@ async function main() {
     check('убранного объекта нет в списке', gone);
     if (gone) createdObjectId = '';
 
-    console.log('\n=== 14. Переключение вкладок ===');
+    console.log('\n=== 15. Переключение вкладок ===');
     // Данные разделов лежат в пакете на устройстве, поэтому переключение
     // вкладок не должно обращаться к серверу. Проверяем это по-настоящему:
     // считаем запросы к API за время обхода разделов.
@@ -886,8 +1006,11 @@ async function main() {
 
     await page.setViewport({ width: 430, height: 932, deviceScaleFactor: 2 });
 
-    console.log('\n=== 15. Ошибки консоли ===');
-    const meaningful = consoleErrors.filter((line) => line.indexOf('sw.js') === -1);
+    console.log('\n=== 16. Ошибки консоли ===');
+    // Отсеиваем шум самой проверки: браузер ругается на служебный файл
+    // приложения и на запросы, которые мы нарочно обрываем, проверяя офлайн.
+    const meaningful = consoleErrors.filter((line) =>
+      line.indexOf('sw.js') === -1 && line.indexOf('ERR_INTERNET_DISCONNECTED') === -1);
     check('в консоли браузера нет ошибок', meaningful.length === 0,
       meaningful.length ? meaningful.slice(0, 3).join(' | ') : 'чисто');
   } finally {

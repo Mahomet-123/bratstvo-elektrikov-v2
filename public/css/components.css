@@ -76,6 +76,15 @@
   flex: none;
 }
 
+/* Занятость кнопки: значок крутится, пока идёт работа. */
+.btn__icon--spin {
+  animation: spin 0.9s linear infinite;
+}
+
+.btn--busy {
+  cursor: progress;
+}
+
 /* --- Карточки ----------------------------------------------------------- */
 
 .card {
@@ -298,6 +307,12 @@
   width: 34px;
   height: 34px;
   border-width: 3px;
+}
+
+.spinner--sm {
+  width: 16px;
+  height: 16px;
+  border-width: 2px;
 }
 
 .loading-block {

@@ -111,6 +111,120 @@ function checkImports() {
 }
 
 /**
+ * Имена, доступные в браузере без импорта.
+ * Список намеренно короткий: если имя сюда не попало и не объявлено в файле —
+ * это повод проверить, а не повод молча пропустить.
+ */
+const BROWSER_GLOBALS = new Set([
+  'console', 'window', 'document', 'navigator', 'location', 'localStorage', 'sessionStorage',
+  'indexedDB', 'fetch', 'URL', 'Blob', 'File', 'FileReader', 'FormData', 'Headers', 'Request',
+  'Response', 'Image', 'ImageBitmap', 'createImageBitmap', 'OffscreenCanvas',
+  'setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'requestAnimationFrame',
+  'cancelAnimationFrame', 'queueMicrotask', 'structuredClone',
+  'Object', 'Array', 'String', 'Number', 'Boolean', 'Symbol', 'BigInt', 'Date', 'RegExp',
+  'Promise', 'Set', 'Map', 'WeakMap', 'WeakSet', 'Error', 'TypeError', 'RangeError', 'JSON', 'Math',
+  'parseInt', 'parseFloat', 'isNaN', 'isFinite', 'NaN', 'Infinity', 'undefined', 'globalThis',
+  'encodeURIComponent', 'decodeURIComponent', 'encodeURI', 'decodeURI', 'btoa', 'atob',
+  'getComputedStyle', 'matchMedia', 'reportError', 'addEventListener', 'removeEventListener',
+  'dispatchEvent', 'alert', 'confirm', 'prompt', 'postMessage',
+  'HTMLElement', 'Element', 'Node', 'Event', 'CustomEvent', 'HashChangeEvent', 'DOMException',
+  'MutationObserver', 'IntersectionObserver', 'ResizeObserver', 'performance', 'crypto',
+  'AbortController', 'TextEncoder', 'TextDecoder', 'Intl', 'Reflect', 'Proxy', 'Option',
+  'KeyboardEvent', 'MouseEvent', 'PointerEvent', 'XMLHttpRequest', 'Notification', 'caches',
+  'clients', 'self', 'importScripts'
+]);
+
+/** Ключевые слова: скобка после них — не вызов функции. */
+const KEYWORDS = new Set([
+  'if', 'for', 'while', 'switch', 'catch', 'return', 'typeof', 'function', 'new', 'await',
+  'class', 'super', 'this', 'do', 'else', 'try', 'finally', 'delete', 'void', 'in', 'of',
+  'instanceof', 'case', 'yield', 'throw', 'const', 'let', 'var', 'async', 'default'
+]);
+
+/**
+ * Короткая запись метода в объекте: `get() { … }` — это объявление,
+ * а не вызов. Ищем закрывающую скобку аргументов и смотрим, что за ней.
+ * @param {string} src
+ * @param {number} from — позиция сразу после открывающей скобки
+ * @return {boolean}
+ */
+function isMethodDefinition(src, from) {
+  let depth = 1;
+  let i = from;
+  while (i < src.length && depth > 0) {
+    const ch = src[i];
+    if (ch === '(') depth++;
+    else if (ch === ')') depth--;
+    i++;
+  }
+  return depth === 0 && /^\s*\{/.test(src.slice(i));
+}
+
+/**
+ * Проверка, что все имена, которые модуль вызывает, у него есть.
+ *
+ * `node --check` видит только синтаксис: `setContent(...)` без импорта —
+ * синтаксически верная строка, а в браузере это ReferenceError, который
+ * роняет экран целиком. Проверка импортов такое тоже не ловит: имя просто
+ * не указано в списке импорта. Поэтому ищем вызовы вида `имя(` и сверяем
+ * с тем, что объявлено в файле, импортировано или есть в браузере.
+ */
+function checkFrontendNames() {
+  const problems = [];
+  const files = collect(path.join(ROOT, 'public', 'js'), '.js');
+
+  for (const file of files) {
+    const raw = fs.readFileSync(file, 'utf8');
+    const rel = path.relative(ROOT, file).replace(/\\/g, '/');
+
+    // Комментарии убираем: в них имена пишут со скобками, и это не вызовы.
+    const src = raw
+      .replace(/\/\*[\s\S]*?\*\//g, ' ')
+      .replace(/(^|[^:])\/\/[^\n]*/g, '$1');
+
+    const known = new Set();
+    const add = (name) => { if (name) known.add(name); };
+
+    /** Имена из списка параметров: с разбором { a, b }, [a, b] и значениями. */
+    const addParams = (text) => {
+      String(text).replace(/[{}\[\]]/g, ' ').split(',').forEach((part) => {
+        let name = part.trim().split('=')[0].trim();
+        name = name.replace(/^\.\.\./, '').split(':').pop().trim();
+        if (/^[A-Za-z_$][\w$]*$/.test(name)) add(name);
+      });
+    };
+
+    for (const m of src.matchAll(/\b(?:function|const|let|var|class)\s+([A-Za-z_$][\w$]*)/g)) add(m[1]);
+    for (const m of src.matchAll(/import\s*\{([^}]+)\}\s*from/g)) {
+      m[1].split(',').forEach((part) => add(part.trim().split(/\s+as\s+/).pop().trim()));
+    }
+    for (const m of src.matchAll(/import\s+([A-Za-z_$][\w$]*)\s+from/g)) add(m[1]);
+    for (const m of src.matchAll(/\b(?:const|let|var)\s*\{([^}]+)\}\s*=/g)) addParams(m[1]);
+    for (const m of src.matchAll(/\b(?:const|let|var)\s*\[([^\]]+)\]\s*=/g)) addParams(m[1]);
+    for (const m of src.matchAll(/function\s*[A-Za-z_$\w]*\s*\(([^)]*)\)/g)) addParams(m[1]);
+    for (const m of src.matchAll(/\(([^()]*)\)\s*=>/g)) addParams(m[1]);
+    for (const m of src.matchAll(/([A-Za-z_$][\w$]*)\s*=>/g)) add(m[1]);
+    for (const m of src.matchAll(/catch\s*\(\s*([A-Za-z_$][\w$]*)/g)) add(m[1]);
+
+    // Скобку закрытия ищем вручную: в аргументах бывают вложенные вызовы,
+    // и простой образец `имя(аргументы)` их не разберёт.
+    const re = /(?<![A-Za-z0-9_.$\/\\])([A-Za-z_$][\w$]*)\s*\(/g;
+    const seen = new Set();
+    let m;
+    while ((m = re.exec(src))) {
+      const name = m[1];
+      if (KEYWORDS.has(name) || BROWSER_GLOBALS.has(name) || known.has(name) || seen.has(name)) continue;
+      if (isMethodDefinition(src, m.index + m[0].length)) continue;
+
+      seen.add(name);
+      problems.push(rel + ' → «' + name + '()» не объявлена и не импортирована');
+    }
+  }
+
+  return problems;
+}
+
+/**
  * Проверка, что все служебные функции бэкенда определены.
  * Apps Script склеивает файлы в один общий контекст, поэтому вызов
  * несуществующей функции вроде `withObjectSheet_()` не ловится ни
@@ -174,7 +288,14 @@ if (importProblems.length) {
   importProblems.forEach((line) => console.log('  ОШИБКА ' + line));
 }
 
-// Третий проход: все ли служебные функции бэкенда объявлены.
+// Третий проход: все ли имена, которые вызывает фронтенд, у него есть.
+const nameProblems = checkFrontendNames();
+if (nameProblems.length) {
+  console.log('\nНеобъявленные имена фронтенда:');
+  nameProblems.forEach((line) => console.log('  ОШИБКА ' + line));
+}
+
+// Четвёртый проход: все ли служебные функции бэкенда объявлены.
 const symbolProblems = checkBackendSymbols();
 if (symbolProblems.length) {
   console.log('\nСлужебные функции бэкенда:');
@@ -183,9 +304,10 @@ if (symbolProblems.length) {
 
 console.log('\nПроверено файлов: ' + targets.length + ', ошибок: ' + failures.length +
   ', проблем с импортами: ' + importProblems.length +
+  ', необъявленных имён: ' + nameProblems.length +
   ', необъявленных функций: ' + symbolProblems.length);
 
-if (failures.length || importProblems.length || symbolProblems.length) {
+if (failures.length || importProblems.length || symbolProblems.length || nameProblems.length) {
   if (failures.length) console.error('\nНе прошли проверку:\n  ' + failures.join('\n  '));
   process.exit(1);
 }

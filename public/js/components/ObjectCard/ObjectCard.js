@@ -13,6 +13,8 @@ import { loadStyles } from '../../core/styles.js';
 import { iconSvg } from '../../core/icons.js';
 import { store } from '../../core/store.js';
 import bundle from '../../core/bundle.js';
+import { runBusy } from '../../core/busy.js';
+import objectCache from '../../core/objectCache.js';
 import { toastSuccess, toastError } from '../../core/toast.js';
 import { confirmDialog, openModal } from '../../core/modal.js';
 import { describeError } from '../../api/apiClient.js';
@@ -178,21 +180,21 @@ export function createObjectCard(props) {
     if (object.status === CONFIG.STATUS_CALC) {
       actions.push(h('button.btn.btn--primary.btn--block', {
         type: 'button',
-        onclick: () => changeStatus(CONFIG.STATUS_WORK)
+        onclick: (event) => changeStatus(CONFIG.STATUS_WORK, event.currentTarget)
       }, 'Перевести в работу'));
     } else if (object.status === CONFIG.STATUS_WORK) {
       actions.push(h('button.btn.btn--primary.btn--block', {
         type: 'button',
-        onclick: () => closeObject()
+        onclick: (event) => closeObject(event.currentTarget)
       }, 'Закрыть объект'));
       actions.push(h('button.btn.btn--ghost.btn--block', {
         type: 'button',
-        onclick: () => changeStatus(CONFIG.STATUS_CALC)
+        onclick: (event) => changeStatus(CONFIG.STATUS_CALC, event.currentTarget)
       }, 'Вернуть в расчёт'));
     } else if (object.status === CONFIG.STATUS_CLOSED) {
       actions.push(h('button.btn.btn--ghost.btn--block', {
         type: 'button',
-        onclick: () => changeStatus(CONFIG.STATUS_WORK)
+        onclick: (event) => changeStatus(CONFIG.STATUS_WORK, event.currentTarget)
       }, 'Возобновить работы'));
     }
 
@@ -244,7 +246,7 @@ export function createObjectCard(props) {
     if (isLeader && object.status === CONFIG.STATUS_CALC) {
       rows.push(h('button.row.row--tap.object-card-screen__row--danger', {
         type: 'button',
-        onclick: () => removeObject(object)
+        onclick: (event) => removeObject(object, event.currentTarget)
       },
         h('span.row__main',
           h('span.row__title', { text: 'Убрать объект' }),
@@ -276,47 +278,74 @@ export function createObjectCard(props) {
    * Действия
    * ------------------------------------------------------------------------ */
 
-  /** Загрузка карточки. */
+  /**
+   * Загрузка карточки.
+   *
+   * Сначала показываем сохранённое на устройстве — экран открывается сразу,
+   * без «Загружаем…». Свежую карточку подтягиваем следом и тихо подменяем.
+   */
   async function load() {
-    loading = true;
-    render();
-    try {
-      card = await api.objectGet(id);
+    const cached = objectCache.part(id, 'card');
+    if (cached) {
+      card = cached;
       loading = false;
       render();
-      if (typeof options.onTitle === 'function' && card && card.object) {
-        options.onTitle(card.object.title, '№ ' + card.object.numberLabel);
-      }
+      applyTitle();
+    }
+
+    loading = !card;
+    if (!card) render();
+
+    try {
+      const fresh = await api.objectGet(id);
+      objectCache.put(id, 'card', fresh);
+      card = fresh;
+      loading = false;
+      render();
+      applyTitle();
     } catch (error) {
       loading = false;
-      card = null;
-      render();
-      toastError(describeError(error));
+      // Карточка уже показана из сохранённого — молчим, чтобы не мешать.
+      if (!card) {
+        card = null;
+        render();
+        toastError(describeError(error));
+      }
+    }
+  }
+
+  /** Заголовок в верхней панели. */
+  function applyTitle() {
+    if (typeof options.onTitle === 'function' && card && card.object) {
+      options.onTitle(card.object.title, '№ ' + card.object.numberLabel);
     }
   }
 
   /** Смена статуса объекта. */
-  async function changeStatus(status) {
-    try {
-      await api.objectSetStatus(id, status);
-      // Список объектов берётся из пакета данных — он устарел, обновляем.
-      bundle.refresh();
-      toastSuccess('Статус изменён: ' + CONFIG.STATUS_LABEL[status]);
-      await load();
-    } catch (error) {
-      toastError(describeError(error));
-    }
+  async function changeStatus(status, button) {
+    await runBusy(button, 'Меняем статус…', async () => {
+      try {
+        await api.objectSetStatus(id, status);
+        // Список объектов берётся из пакета данных — он устарел, обновляем.
+        bundle.refresh();
+        objectCache.markStale(id);
+        toastSuccess('Статус изменён: ' + CONFIG.STATUS_LABEL[status]);
+        await load();
+      } catch (error) {
+        toastError(describeError(error));
+      }
+    });
   }
 
   /** Закрытие объекта с подтверждением. */
-  async function closeObject() {
+  async function closeObject(button) {
     const confirmed = await confirmDialog({
       title: 'Закрыть объект?',
       text: 'Объект перейдёт в статус «Закрыт» и уедет в архив по годам. Работы можно будет возобновить.',
       confirmText: 'Закрыть объект'
     });
     if (!confirmed) return;
-    await changeStatus(CONFIG.STATUS_CLOSED);
+    await changeStatus(CONFIG.STATUS_CLOSED, button);
   }
 
   /** Правка реквизитов во всплывающем окне. */
@@ -328,36 +357,44 @@ export function createObjectCard(props) {
       onSubmit: async () => {}
     });
 
-    const action = await openModal({
+    await openModal({
       title: 'Реквизиты объекта',
       body: form.el,
       actions: [
         { label: 'Отмена', variant: 'ghost', value: null },
-        { label: 'Сохранить', variant: 'primary', value: 'save' }
+        {
+          label: 'Сохранить',
+          variant: 'primary',
+          // Сохраняем прямо из окна и закрываем его только после успеха —
+          // так видно, что нажатие сработало и запись идёт.
+          onClick: async ({ button, close }) => {
+            const data = form.getData();
+            if (!data.title) {
+              toastError('Название объекта не может быть пустым');
+              return;
+            }
+
+            await runBusy(button, 'Сохраняем…', async () => {
+              try {
+                await api.objectUpdate(id, data);
+                // Название, клиент и адрес видны в списке — пакет данных устарел.
+                bundle.refresh();
+                objectCache.markStale(id);
+                toastSuccess('Изменения сохранены');
+                close('save');
+                await load();
+              } catch (error) {
+                toastError(describeError(error));
+              }
+            });
+          }
+        }
       ]
     });
-
-    if (action !== 'save') return;
-
-    const data = form.getData();
-    if (!data.title) {
-      toastError('Название объекта не может быть пустым');
-      return;
-    }
-
-    try {
-      await api.objectUpdate(id, data);
-      // Название, клиент и адрес видны в списке — пакет данных устарел.
-      bundle.refresh();
-      toastSuccess('Изменения сохранены');
-      await load();
-    } catch (error) {
-      toastError(describeError(error));
-    }
   }
 
   /** Уборка объекта — с сохранением листа в корзине. */
-  async function removeObject(object) {
+  async function removeObject(object, button) {
     const confirmed = await confirmDialog({
       title: 'Убрать объект?',
       text: 'Объект исчезнет из приложения. Его лист с расчётом, днями и закупками переедет в таблицу-корзину на Google Диске — данные не пропадут.',
@@ -366,16 +403,19 @@ export function createObjectCard(props) {
     });
     if (!confirmed) return;
 
-    try {
-      const result = await api.objectRemove(id);
-      // Объекта больше нет — обновляем пакет сразу, чтобы он не остался
-      // в списке до следующего захода.
-      bundle.refresh();
-      toastSuccess(result.message || 'Объект убран');
-      navigate('/objects', true);
-    } catch (error) {
-      toastError(describeError(error));
-    }
+    await runBusy(button, 'Убираем…', async () => {
+      try {
+        const result = await api.objectRemove(id);
+        // Объекта больше нет — обновляем пакет сразу, чтобы он не остался
+        // в списке до следующего захода.
+        bundle.refresh();
+        objectCache.forget(id);
+        toastSuccess(result.message || 'Объект убран');
+        navigate('/objects', true);
+      } catch (error) {
+        toastError(describeError(error));
+      }
+    });
   }
 
   /** Переход на другой экран. */

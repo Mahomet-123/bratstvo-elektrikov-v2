@@ -9,7 +9,7 @@
  * ============================================================================
  */
 
-const VERSION = 'v2.3.1';
+const VERSION = 'v2.4.0';
 const CACHE_STATIC = 'be-static-' + VERSION;
 const CACHE_RUNTIME = 'be-runtime-' + VERSION;
 
@@ -35,6 +35,8 @@ const PRECACHE = [
   './js/core/router.js',
   './js/core/store.js',
   './js/core/bundle.js',
+  './js/core/busy.js',
+  './js/core/objectCache.js',
   './js/core/styles.js',
   './js/core/toast.js',
   './js/core/estimate.js',

@@ -31,6 +31,7 @@ import { createAnalytics } from './components/Analytics/Analytics.js';
 import { createArchive } from './components/Archive/Archive.js';
 import { createBrigade } from './components/Brigade/Brigade.js';
 import { createVisits } from './components/Visits/Visits.js';
+import { createPrices } from './components/Prices/Prices.js';
 import { CONFIG } from './config.js';
 
 const root = qs('#app');
@@ -180,6 +181,11 @@ function mountShell() {
 
   shell.register('/visits', () => createVisits({
     onNavigate: go
+  }));
+
+  shell.register('/prices', (params, tools) => createPrices({
+    onNavigate: go,
+    onTitle: (title, subtitle) => tools.setTitle(title, subtitle)
   }));
 
   setContent(root, shell.el);

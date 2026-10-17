@@ -20,6 +20,8 @@ import { api } from '../../api/endpoints.js';
 import {
   money, moneyShort, num, dateShort, dateWithWeekday, today, countLabel
 } from '../../core/format.js';
+import { runBusy } from '../../core/busy.js';
+import objectCache from '../../core/objectCache.js';
 import { sendNow, enqueue, isOfflineError } from '../../core/sync.js';
 import { createPhotoUploader } from '../PhotoUploader/PhotoUploader.js';
 
@@ -201,13 +203,20 @@ export function createPurchases(props) {
 
   /** Одна закупка. */
   function renderItem(item) {
-    const photo = h(item.photo ? 'button.purchase__photo.purchase__photo--filled' : 'span.purchase__photo', {
-      type: item.photo ? 'button' : undefined,
-      'aria-label': item.photo ? 'Открыть фото накладной' : undefined,
-      onclick: item.photo ? () => showPhoto(item) : undefined
-    }, item.photo
-      ? h('img.purchase__thumb', { src: item.photo, alt: 'Накладная', loading: 'lazy' })
+    const photos = itemPhotos(item);
+
+    const photo = h(photos.length ? 'button.purchase__photo.purchase__photo--filled' : 'span.purchase__photo', {
+      type: photos.length ? 'button' : undefined,
+      'aria-label': photos.length ? 'Открыть фото накладной' : undefined,
+      onclick: photos.length ? () => showPhoto(item, photos) : undefined
+    }, photos.length
+      ? h('img.purchase__thumb', { src: photos[0].link, alt: 'Накладная', loading: 'lazy' })
       : h('span.purchase__thumb-empty', { html: iconSvg('cart', 18) }));
+
+    // Накладных может быть несколько — показываем, сколько их.
+    if (photos.length > 1) {
+      photo.appendChild(h('span.purchase__photo-count', { text: String(photos.length) }));
+    }
 
     const qtyLine = [
       num(item.qty, item.qty % 1 ? 2 : 0) + (item.unit ? ' ' + item.unit : ''),
@@ -221,14 +230,16 @@ export function createPurchases(props) {
           h('span.purchase__material', { text: item.material || 'Материал' })
         ),
         h('span.purchase__meta', { text: dateWithWeekday(item.date) + ' · ' + qtyLine }),
-        item.comment ? h('span.purchase__comment', { text: item.comment }) : null
+        item.comment ? h('span.purchase__comment', { text: item.comment }) : null,
+        // Закупка ещё не ушла на сервер — говорим об этом прямо.
+        item.pending ? h('span.badge.badge--muted', { text: 'ждёт отправки' }) : null
       ),
       h('span.row__side.purchase__side',
         h('span.purchase__sum', { text: moneyShort(item.sum) }),
-        h('button.purchase__remove', {
+        item.pending ? null : h('button.purchase__remove', {
           type: 'button',
           'aria-label': 'Удалить закупку',
-          onclick: () => removeItem(item)
+          onclick: (event) => removeItem(item, event.currentTarget)
         }, h('span', { html: iconSvg('trash', 18) }))
       )
     );
@@ -240,23 +251,22 @@ export function createPurchases(props) {
 
   /** Загрузка списка. */
   async function load() {
-    loading = true;
-    renderList();
+    // Сохранённые закупки показываем сразу — экран открывается без ожидания.
+    const cached = objectCache.part(id, 'purchases');
+    if (cached) applyPurchases(cached);
+
+    loading = !cached;
+    if (!cached) renderList();
+
     try {
       const data = await api.purchasesList(id);
-      items = (data && data.purchases) || [];
-      summary = { sum: (data && data.sum) || 0, total: (data && data.total) || 0 };
-      loading = false;
-      renderSummary();
-      renderList();
-
-      if (typeof options.onTitle === 'function') {
-        options.onTitle('Закупки', summary.total
-          ? countLabel(summary.total, ['закупка', 'закупки', 'закупок']) + ' · ' + moneyShort(summary.sum)
-          : '');
-      }
+      objectCache.put(id, 'purchases', data);
+      applyPurchases(data);
     } catch (error) {
       loading = false;
+      // Закупки уже показаны из сохранённого — молчим, чтобы не мешать.
+      if (cached) return;
+
       clear(listBox);
       listBox.appendChild(h('div.empty',
         h('div.empty__icon.purchases__empty-icon', { html: iconSvg('alert', 26) }),
@@ -267,6 +277,57 @@ export function createPurchases(props) {
         )
       ));
     }
+  }
+
+  /**
+   * Показать закупки: сохранённые и свежие приходят одной формы.
+   * К записям с сервера добавляем те, что ещё ждут отправки, — иначе они
+   * пропадали бы с экрана после каждого обновления.
+   */
+  function applyPurchases(data) {
+    items = mergePending((data && data.purchases) || []);
+    const sum = items.reduce((acc, item) => acc + (Number(item.sum) || 0), 0);
+    summary = { sum: Math.round(sum * 100) / 100, total: items.length };
+    loading = false;
+    renderSummary();
+    renderList();
+
+    if (typeof options.onTitle === 'function') {
+      options.onTitle('Закупки', summary.total
+        ? countLabel(summary.total, ['закупка', 'закупки', 'закупок']) + ' · ' + moneyShort(summary.sum)
+        : '');
+    }
+
+    // Держим сохранённое на устройстве в согласии с экраном. Без этого после
+    // добавления закупки кэш оставался прежним, и следующий заход показывал
+    // пустой список, пока не придёт ответ сервера.
+    // Закупки, ждущие отправки, в кэш не кладём: они хранятся отдельно
+    // и подмешиваются заново — иначе после отправки они задвоятся.
+    const saved = items.filter((item) => !item.pending);
+    objectCache.put(id, 'purchases', { purchases: saved, sum: summary.sum, total: saved.length });
+  }
+
+  /** Добавить к списку с сервера закупки, которые ещё ждут отправки. */
+  function mergePending(list) {
+    const pend = objectCache.pending(id, 'purchase');
+    const known = {};
+    list.forEach((item) => { known[item.id] = true; });
+
+    const merged = list.concat(pend.filter((item) => !known[item.id]));
+    merged.sort((a, b) => {
+      if (a.date === b.date) return String(a.created || '') < String(b.created || '') ? 1 : -1;
+      return a.date < b.date ? 1 : -1;
+    });
+    return merged;
+  }
+
+  /**
+   * Добавить закупку в список на экране, не перечитывая его с сервера.
+   * Так после сохранения не появляется ни ожидания, ни мигания списка.
+   */
+  function appendLocal(record) {
+    if (!record) return;
+    applyPurchases({ purchases: items.concat([record]) });
   }
 
   /** Запись закупки. */
@@ -291,7 +352,7 @@ export function createPurchases(props) {
       return;
     }
 
-    const photo = uploader.getPhoto();
+    const photos = uploader.getPhotos();
     const payload = {
       objectId: id,
       purchase: {
@@ -302,33 +363,56 @@ export function createPurchases(props) {
         price: price,
         comment: commentInput.value.trim()
       },
-      photo: photo
-        ? { name: photo.name, mime: photo.mime, data: photo.data }
-        : null
+      photos: photos.map((photo) => ({
+        name: photo.name,
+        mime: photo.mime,
+        data: photo.data
+      }))
     };
 
-    submitBtn.disabled = true;
-    submitBtn.textContent = photo ? 'Загружаем фото…' : 'Сохраняем…';
+    const busyLabel = photos.length
+      ? (photos.length > 1 ? 'Загружаем ' + photos.length + ' фото…' : 'Загружаем фото…')
+      : 'Сохраняем…';
 
-    try {
-      const result = await sendNow('purchase', payload);
-      const sum = result && result.purchase ? result.purchase.sum : qty * price;
-      toastSuccess('Закупка записана: ' + moneyShort(sum));
-      resetForm();
-      await load();
-    } catch (error) {
-      if (isOfflineError(error)) {
-        // Связи нет — запись вместе с фото ждёт своей очереди на телефоне.
-        await enqueue('purchase', payload, 'Закупка: ' + material);
-        toastWarning('Нет сети — закупка сохранена на телефоне и отправится сама, когда появится связь', 6000);
+    await runBusy(submitBtn, busyLabel, async () => {
+      try {
+        const result = await sendNow('purchase', payload);
+        const sum = result && result.purchase ? result.purchase.sum : qty * price;
+        toastSuccess('Закупка записана: ' + moneyShort(sum));
         resetForm();
-      } else {
-        toastError(describeError(error));
+
+        // Закупка уже пришла с сервера — показываем её без перезагрузки списка.
+        if (result && result.purchase) appendLocal(result.purchase);
+        else await load();
+      } catch (error) {
+        if (isOfflineError(error)) {
+          // Связи нет — закупка вместе с фото остаётся на телефоне и уйдёт сама.
+          // Показываем её сразу: человек должен видеть свою работу.
+          const queueId = await enqueue('purchase', payload, 'Закупка: ' + material);
+          const local = {
+            id: 'pending-' + queueId,
+            queueId: queueId,
+            date: payload.purchase.date,
+            material: material,
+            qty: qty,
+            unit: payload.purchase.unit,
+            price: price,
+            sum: Math.round(qty * price * 100) / 100,
+            comment: payload.purchase.comment,
+            photos: [],
+            photoCount: photos.length,
+            pending: true,
+            created: new Date().toISOString()
+          };
+          objectCache.addPending(id, 'purchase', local);
+          appendLocal(local);
+          toastWarning('Нет сети — закупка сохранена на телефоне и отправится сама, когда появится связь', 6000);
+          resetForm();
+        } else {
+          toastError(describeError(error));
+        }
       }
-    } finally {
-      submitBtn.disabled = false;
-      submitBtn.textContent = 'Записать закупку';
-    }
+    });
   }
 
   /** Очистка формы: дату и единицу оставляем — удобно вводить подряд. */
@@ -343,7 +427,7 @@ export function createPurchases(props) {
   }
 
   /** Удаление закупки. */
-  async function removeItem(item) {
+  async function removeItem(item, button) {
     const confirmed = await confirmDialog({
       title: 'Удалить закупку?',
       text: 'Запись «' + (item.material || 'материал') + '» от ' + dateShort(item.date) +
@@ -353,25 +437,44 @@ export function createPurchases(props) {
     });
     if (!confirmed) return;
 
-    try {
-      const result = await api.purchasesRemove(id, item.id);
-      toastSuccess(result && result.photoKept
-        ? 'Закупка удалена. Фото накладной сохранено на Диске'
-        : 'Закупка удалена');
-      await load();
-    } catch (error) {
-      toastError(describeError(error));
-    }
+    await runBusy(button, 'Удаляем…', async () => {
+      try {
+        const result = await api.purchasesRemove(id, item.id);
+        toastSuccess(result && result.photoKept
+          ? 'Закупка удалена. Фото накладной сохранено на Диске'
+          : 'Закупка удалена');
+        await load();
+      } catch (error) {
+        toastError(describeError(error));
+      }
+    });
   }
 
   /** Показ фото накладной крупно. */
-  function showPhoto(item) {
-    const image = h('img.purchase-view__image', { src: item.photo, alt: 'Накладная' });
+  /**
+   * Фотографии закупки одним списком.
+   * Новые записи приходят списком `photos`; у прежних есть только `photo`.
+   */
+  function itemPhotos(item) {
+    if (item.photos && item.photos.length) return item.photos;
+    if (item.photo) return [{ link: item.photo, id: item.photoId || '' }];
+    return [];
+  }
+
+  function showPhoto(item, photos) {
+    const list = photos && photos.length ? photos : [];
+
     const body = h('div.purchase-view',
-      image,
-      item.photoId
+      h('div.purchase-view__list',
+        list.map((photo) => h('img.purchase-view__image', {
+          src: photo.link,
+          alt: 'Накладная',
+          loading: 'lazy'
+        }))
+      ),
+      list.length === 1 && list[0].id
         ? h('a.purchase-view__link', {
-          href: 'https://drive.google.com/file/d/' + encodeURIComponent(item.photoId) + '/view',
+          href: 'https://drive.google.com/file/d/' + encodeURIComponent(list[0].id) + '/view',
           target: '_blank',
           rel: 'noopener'
         }, 'Открыть файл на Google Диске')
@@ -379,7 +482,7 @@ export function createPurchases(props) {
     );
 
     openModal({
-      title: 'Накладная · ' + dateShort(item.date),
+      title: (list.length > 1 ? 'Накладные' : 'Накладная') + ' · ' + dateShort(item.date),
       body: body,
       actions: [{ label: 'Закрыть', variant: 'ghost', value: null }]
     });

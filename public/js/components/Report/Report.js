@@ -145,7 +145,10 @@ export function createReport(props) {
         h('span.row__title', { text: title }),
         h('span.row__sub', { text: subtitle })
       ),
-      h('span.row__side', { html: iconSvg('back', 20, 'report__chevron') })
+      // Пока работа идёт, вместо стрелки крутится значок ожидания.
+      h('span.row__side', disabled
+        ? h('span.spinner.spinner--sm')
+        : { html: iconSvg('back', 20, 'report__chevron') })
     );
   }
 

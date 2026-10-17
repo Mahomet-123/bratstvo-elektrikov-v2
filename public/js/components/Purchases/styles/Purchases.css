@@ -71,12 +71,31 @@
 }
 
 .purchase__photo {
+  position: relative;
   flex: none;
   width: 48px;
   height: 48px;
   border-radius: var(--r-s);
   overflow: hidden;
   background: var(--c-surface-2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Сколько накладных приложено к закупке. */
+.purchase__photo-count {
+  position: absolute;
+  right: 2px;
+  bottom: 2px;
+  min-width: 17px;
+  height: 17px;
+  padding: 0 4px;
+  border-radius: var(--r-pill);
+  background: rgba(14, 22, 38, 0.74);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
   display: flex;
   align-items: center;
   justify-content: center;

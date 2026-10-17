@@ -235,6 +235,42 @@ function truncate_(s, max) {
 }
 
 /**
+ * Собрать список значений в одну ячейку.
+ *
+ * Таблица хранит несколько значений в одной ячейке, разделяя их переводом
+ * строки: так список фотографий накладной помещается в уже существующую
+ * колонку, и схему листа менять не приходится.
+ *
+ * @param {Array<string>} values
+ * @return {string}
+ */
+function joinCellList_(values) {
+  if (!values || !values.length) return '';
+  const parts = [];
+  values.forEach(function (value) {
+    const text = str_(value);
+    if (text) parts.push(text);
+  });
+  return parts.join('\n');
+}
+
+/**
+ * Разобрать ячейку со списком значений.
+ * @param {*} value
+ * @return {Array<string>}
+ */
+function splitCellList_(value) {
+  const text = str_(value);
+  if (!text) return [];
+  const parts = [];
+  text.split('\n').forEach(function (part) {
+    const trimmed = part.trim();
+    if (trimmed) parts.push(trimmed);
+  });
+  return parts;
+}
+
+/**
  * Имя, безопасное для листа Google Таблиц (≤100 символов, без \ / ? * [ ] :).
  * @param {string} s
  * @return {string}

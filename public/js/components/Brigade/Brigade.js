@@ -9,7 +9,7 @@
  * ============================================================================
  */
 
-import { h, clear } from '../../core/dom.js';
+import { h, clear, append } from '../../core/dom.js';
 import { loadStyles } from '../../core/styles.js';
 import { iconSvg } from '../../core/icons.js';
 import bundle from '../../core/bundle.js';
@@ -17,6 +17,7 @@ import { toastSuccess, toastError, toastWarning } from '../../core/toast.js';
 import { confirmDialog, openModal } from '../../core/modal.js';
 import { describeError } from '../../api/apiClient.js';
 import { api } from '../../api/endpoints.js';
+import { runBusy } from '../../core/busy.js';
 import { initials, countLabel } from '../../core/format.js';
 
 /**
@@ -32,7 +33,6 @@ export function createBrigade(props) {
   let users = null;
   let bot = null;
   let loading = true;
-  let busy = '';
 
   const bodyBox = h('div.brigade__body');
   const el = h('div.page.brigade', bodyBox);
@@ -50,10 +50,10 @@ export function createBrigade(props) {
       return;
     }
 
-    bodyBox.appendChild(renderMasters());
-    bodyBox.appendChild(renderLeader());
-    bodyBox.appendChild(renderTools());
-    bodyBox.appendChild(renderTelegram());
+    // Раздел руководителя может не отрисоваться (например, в списке не
+    // оказалось ни одного руководителя). append() молча пропускает пустое,
+    // а прямой appendChild(null) роняет экран целиком.
+    append(bodyBox, [renderMasters(), renderLeader(), renderTools(), renderTelegram()]);
   }
 
   /** Разделы руководителя, которых нет в нижнем меню. */
@@ -136,7 +136,7 @@ export function createBrigade(props) {
           ? null
           : h('button.btn.btn--quiet.btn--sm', {
             type: 'button',
-            onclick: () => toggleActive(user)
+            onclick: (event) => toggleActive(user, event.currentTarget)
           }, user.active ? 'Выключить' : 'Включить')
       )
     );
@@ -186,27 +186,25 @@ export function createBrigade(props) {
             bot.configured
               ? h('button.btn.btn--ghost.btn--block', {
                 type: 'button',
-                disabled: busy === 'test',
-                onclick: () => testBot()
-              }, busy === 'test' ? 'Отправляем…' : 'Проверить сообщением')
+                onclick: (event) => testBot(event.currentTarget)
+              }, 'Проверить сообщением')
               : null,
             bot.configured
               ? h('button.btn.btn--ghost.btn--block', {
                 type: 'button',
-                disabled: busy === 'remind',
-                onclick: () => remindNow()
-              }, busy === 'remind' ? 'Собираем…' : 'Напомнить сейчас')
+                onclick: (event) => remindNow(event.currentTarget)
+              }, 'Напомнить сейчас')
               : null,
             bot.configured && !bot.triggerInstalled
               ? h('button.btn.btn--primary.btn--block', {
                 type: 'button',
-                onclick: () => installTrigger()
+                onclick: (event) => installTrigger(event.currentTarget)
               }, 'Включить ежедневное напоминание')
               : null,
             bot.triggerInstalled
               ? h('button.btn.btn--quiet.btn--block', {
                 type: 'button',
-                onclick: () => removeTrigger()
+                onclick: (event) => removeTrigger(event.currentTarget)
               }, 'Выключить ежедневное напоминание')
               : null
           ),
@@ -295,30 +293,35 @@ export function createBrigade(props) {
       h('span.field__hint', { text: 'Не короче четырёх знаков. Пустое поле — код сгенерируется.' })
     );
 
-    const action = await openModal({
+    await openModal({
       title: 'Код входа',
       text: 'Код для «' + user.name + '». Оставьте поле пустым — приложение придумает код само.',
       body: field,
       actions: [
         { label: 'Отмена', variant: 'ghost', value: null },
-        { label: 'Сохранить', variant: 'primary', value: '__save__' }
+        {
+          label: 'Сохранить',
+          variant: 'primary',
+          onClick: async ({ button, close }) => {
+            const code = String(input.value || '').trim();
+            await runBusy(button, 'Сохраняем…', async () => {
+              try {
+                const result = await api.userSetCode(user.id, code);
+                toastSuccess(result.code ? 'Код сохранён: ' + result.code : 'Код обновлён');
+                close('__save__');
+                await loadUsers();
+              } catch (error) {
+                toastError(describeError(error));
+              }
+            });
+          }
+        }
       ]
     });
-    if (action !== '__save__') return;
-
-    const code = String(input.value || '').trim();
-
-    try {
-      const result = await api.userSetCode(user.id, code);
-      toastSuccess(result.code ? 'Код сохранён: ' + result.code : 'Код обновлён');
-      await loadUsers();
-    } catch (error) {
-      toastError(describeError(error));
-    }
   }
 
   /** Включение и выключение мастера. */
-  async function toggleActive(user) {
+  async function toggleActive(user, button) {
     const next = !user.active;
     if (!next) {
       const confirmed = await confirmDialog({
@@ -330,13 +333,15 @@ export function createBrigade(props) {
       if (!confirmed) return;
     }
 
-    try {
-      await api.userSetActive(user.id, next);
-      toastSuccess(next ? 'Доступ открыт: ' + user.name : 'Доступ закрыт: ' + user.name);
-      await loadUsers();
-    } catch (error) {
-      toastError(describeError(error));
-    }
+    await runBusy(button, next ? 'Открываем доступ…' : 'Закрываем доступ…', async () => {
+      try {
+        await api.userSetActive(user.id, next);
+        toastSuccess(next ? 'Доступ открыт: ' + user.name : 'Доступ закрыт: ' + user.name);
+        await loadUsers();
+      } catch (error) {
+        toastError(describeError(error));
+      }
+    });
   }
 
   /** Ввод ключа бота и адреса чата. */
@@ -396,50 +401,46 @@ export function createBrigade(props) {
   }
 
   /** Проверка связи с Telegram. */
-  async function testBot() {
-    busy = 'test';
-    render();
-    try {
-      const result = await api.botTest();
-      if (result.ok) toastSuccess(result.description || 'Сообщение отправлено');
-      else toastError(result.description || 'Не удалось отправить сообщение');
-    } catch (error) {
-      toastError(describeError(error));
-    } finally {
-      busy = '';
-      render();
-    }
+  async function testBot(button) {
+    await runBusy(button, 'Отправляем…', async () => {
+      try {
+        const result = await api.botTest();
+        if (result.ok) toastSuccess(result.description || 'Сообщение отправлено');
+        else toastError(result.description || 'Не удалось отправить сообщение');
+      } catch (error) {
+        toastError(describeError(error));
+      }
+    });
   }
 
   /** Напоминание прямо сейчас. */
-  async function remindNow() {
-    busy = 'remind';
-    render();
-    try {
-      const result = await api.botRemind();
-      if (result.ok) toastSuccess('Напоминание отправлено в чат');
-      else toastError('Не удалось отправить: ' + (result.description || result.reason || 'проверьте настройки'));
-    } catch (error) {
-      toastError(describeError(error));
-    } finally {
-      busy = '';
-      render();
-    }
+  async function remindNow(button) {
+    await runBusy(button, 'Собираем…', async () => {
+      try {
+        const result = await api.botRemind();
+        if (result.ok) toastSuccess('Напоминание отправлено в чат');
+        else toastError('Не удалось отправить: ' + (result.description || result.reason || 'проверьте настройки'));
+      } catch (error) {
+        toastError(describeError(error));
+      }
+    });
   }
 
   /** Ежедневный триггер. */
-  async function installTrigger() {
-    try {
-      const result = await api.botInstall();
-      toastSuccess('Ежедневное напоминание включено на ' + result.hour + ':00');
-      await loadBot();
-    } catch (error) {
-      toastError(describeError(error));
-    }
+  async function installTrigger(button) {
+    await runBusy(button, 'Включаем…', async () => {
+      try {
+        const result = await api.botInstall();
+        toastSuccess('Ежедневное напоминание включено на ' + result.hour + ':00');
+        await loadBot();
+      } catch (error) {
+        toastError(describeError(error));
+      }
+    });
   }
 
   /** Снятие ежедневного триггера. */
-  async function removeTrigger() {
+  async function removeTrigger(button) {
     const confirmed = await confirmDialog({
       title: 'Выключить напоминание?',
       text: 'Бот перестанет писать в чат по вечерам. Отправлять напоминание вручную можно будет по-прежнему.',
@@ -447,13 +448,15 @@ export function createBrigade(props) {
     });
     if (!confirmed) return;
 
-    try {
-      await api.botRemove();
-      toastSuccess('Ежедневное напоминание выключено');
-      await loadBot();
-    } catch (error) {
-      toastError(describeError(error));
-    }
+    await runBusy(button, 'Выключаем…', async () => {
+      try {
+        await api.botRemove();
+        toastSuccess('Ежедневное напоминание выключено');
+        await loadBot();
+      } catch (error) {
+        toastError(describeError(error));
+      }
+    });
   }
 
   /** Переход на другой экран. */

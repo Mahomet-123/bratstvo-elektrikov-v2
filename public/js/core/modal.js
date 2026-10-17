@@ -19,7 +19,10 @@ const openStack = [];
  * @param {string} options.title — заголовок
  * @param {string=} options.text — пояснение под заголовком
  * @param {HTMLElement|Array=} options.body — содержимое
- * @param {Array<Object>=} options.actions — кнопки: { label, variant, value, keep }
+ * @param {Array<Object>=} options.actions — кнопки: { label, variant, value, onClick }
+ *        Если у кнопки задан onClick, окно НЕ закрывается само: обработчик
+ *        получает { button, close } и сам решает, когда закрывать. Это нужно,
+ *        чтобы на кнопке был виден признак работы (например, сохранение).
  * @return {Promise<*>} значение нажатой кнопки либо null при закрытии
  */
 export function openModal(options) {
@@ -43,11 +46,21 @@ export function openModal(options) {
     };
 
     const actions = (config.actions || [{ label: 'Понятно', variant: 'primary', value: true }]).map((action) => {
-      return h('button.btn', {
+      const button = h('button.btn', {
         class: 'btn--' + (action.variant || 'ghost'),
-        type: 'button',
-        onclick: () => finish(action.value === undefined ? true : action.value)
+        type: 'button'
       }, action.label);
+
+      button.addEventListener('click', () => {
+        if (typeof action.onClick === 'function') {
+          // Кнопка выполняет работу сама и закрывает окно, когда закончит.
+          action.onClick({ button: button, close: finish });
+          return;
+        }
+        finish(action.value === undefined ? true : action.value);
+      });
+
+      return button;
     });
 
     const box = h('div.modal__box', { role: 'dialog', 'aria-modal': 'true' },

@@ -104,6 +104,7 @@ export function createAppShell(props) {
       { path: '/profile', handler: () => renderScreen('/profile', { title: 'Профиль' }) },
       { path: '/brigade', handler: () => renderScreen('/brigade', { title: 'Бригада' }) },
       { path: '/visits', handler: () => renderScreen('/visits', { title: 'Посещения', back: true }) },
+      { path: '/prices', handler: () => renderScreen('/prices', { title: 'Прайс', back: true }) },
       { path: '/analytics', handler: () => renderScreen('/analytics', { title: 'Аналитика' }) },
       { path: '/archive', handler: () => renderScreen('/archive', { title: 'Архив' }) },
       { path: '/cabinet/:id', handler: (params) => renderScreen('/cabinet/:id', { title: 'Кабинет клиента', back: true, params: params }) }

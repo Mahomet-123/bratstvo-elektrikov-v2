@@ -1,13 +1,22 @@
 /**
  * ============================================================================
  * Компонент: PhotoUploader
- * Ответственность: съёмка или выбор фотографии накладной и её сжатие прямо
- *                  на телефоне. На сервер уходит снимок длинной стороной
- *                  до 1600 px и весом около 300 КБ — такой проходит даже
- *                  по слабому мобильному интернету.
- *                  Формат — WebP, с запасным JPEG для браузеров, которые
- *                  не умеют писать WebP (там холст молча отдаёт PNG,
+ * Ответственность: съёмка и выбор фотографий накладной с сжатием прямо
+ *                  на телефоне. Фотографий может быть несколько: снимки
+ *                  собираются в список, показываются превью, ненужные
+ *                  убираются до сохранения закупки.
+ *
+ *                  На сервер уходит снимок длинной стороной до 1600 px и весом
+ *                  около 300 КБ — такой проходит даже по слабому мобильному
+ *                  интернету. Формат — WebP, с запасным JPEG для браузеров,
+ *                  которые не умеют писать WebP (там холст молча отдаёт PNG,
  *                  поэтому формат ответа проверяется, а не предполагается).
+ *
+ *                  Камера и галерея — РАЗНЫЕ поля выбора файла. Одно поле
+ *                  с признаком capture на части телефонов открывает галерею
+ *                  вместо камеры, поэтому кнопки разделены: у камеры своё
+ *                  поле с capture, у галереи — своё, с выбором нескольких.
+ *
  * Зависимости: config, core/dom, core/styles, core/icons, core/format,
  *              core/toast
  * ============================================================================
@@ -17,7 +26,7 @@ import { h, setContent } from '../../core/dom.js';
 import { loadStyles } from '../../core/styles.js';
 import { iconSvg } from '../../core/icons.js';
 import { fileSize } from '../../core/format.js';
-import { toastError } from '../../core/toast.js';
+import { toastError, toastWarning } from '../../core/toast.js';
 import { CONFIG } from '../../config.js';
 
 /** Форматы сжатия по убыванию предпочтения. */
@@ -28,6 +37,9 @@ const MAX_ATTEMPTS = 4;
 
 /** Ниже этой длинной стороны уменьшать нельзя — накладную не прочитать. */
 const MIN_SIDE = 640;
+
+/** Сколько фотографий помещается в одну закупку. */
+const MAX_PHOTOS = 8;
 
 /* --------------------------------------------------------------------------
  * Сжатие
@@ -227,148 +239,205 @@ function toBase64(blob) {
  * ------------------------------------------------------------------------ */
 
 /**
- * Создание блока загрузки фото.
+ * Создание блока загрузки фотографий.
  * @param {Object=} props
- * @param {Function=} props.onChange — вызывается с фотографией или null
- * @param {string=} props.hint — подсказка под кнопкой
- * @return {Object} { el, getPhoto, setPhoto, clear, busy, destroy }
+ * @param {Function=} props.onChange — вызывается со списком фотографий
+ * @param {string=} props.hint — подсказка под кнопками
+ * @param {number=} props.maxPhotos — сколько снимков помещается
+ * @return {Object} { el, getPhotos, setPhotos, getPhoto, clear, isBusy, destroy }
  */
 export function createPhotoUploader(props) {
   const options = props || {};
   const limits = Object.assign({}, CONFIG.PHOTO, options.limits || {});
+  const maxPhotos = options.maxPhotos || MAX_PHOTOS;
 
-  /** Текущая фотография: { name, mime, size, data, preview, width, height }. */
-  let photo = null;
-  let busy = false;
+  /** Список фотографий: { name, mime, size, data, preview, width, height }. */
+  let photos = [];
+  /** Сколько снимков сейчас сжимается. */
+  let busyCount = 0;
   let destroyed = false;
 
-  const input = h('input.photo-uploader__input', {
+  // Камера: своё поле с признаком capture — телефон открывает съёмку.
+  const cameraInput = h('input.photo-uploader__input', {
     type: 'file',
     accept: 'image/*',
     capture: 'environment',
     'aria-hidden': 'true',
     tabindex: '-1',
     onchange: () => {
-      const files = input.files;
-      if (files && files.length) handleFiles(files[0]);
-      // Сбрасываем поле: иначе повторный выбор того же файла не сработает.
-      input.value = '';
+      takeFiles(cameraInput.files);
+      // Сбрасываем поле: иначе повторная съёмка того же кадра не сработает.
+      cameraInput.value = '';
+    }
+  });
+
+  // Галерея: без capture, зато можно выбрать сразу несколько снимков.
+  const galleryInput = h('input.photo-uploader__input', {
+    type: 'file',
+    accept: 'image/*',
+    multiple: true,
+    'aria-hidden': 'true',
+    tabindex: '-1',
+    onchange: () => {
+      takeFiles(galleryInput.files);
+      galleryInput.value = '';
     }
   });
 
   const box = h('div.photo-uploader__box');
-  const el = h('div.photo-uploader', input, box);
+  const el = h('div.photo-uploader', cameraInput, galleryInput, box);
 
-  /** Сообщить наружу о смене фотографии. */
+  /** Сообщить наружу о смене списка. */
   function notify() {
-    if (typeof options.onChange === 'function') options.onChange(photo);
+    if (typeof options.onChange === 'function') options.onChange(photos.slice());
   }
 
-  /** Отрисовка текущего состояния блока. */
-  function render() {
-    if (busy) {
-      setContent(box,
-        h('div.photo-uploader__busy',
-          h('span.spinner'),
-          h('span.photo-uploader__busy-text', { text: 'Сжимаем фотографию…' })
-        )
-      );
-      return;
-    }
-
-    if (!photo) {
-      setContent(box,
-        h('button.photo-uploader__pick', {
-          type: 'button',
-          onclick: () => input.click()
-        },
-          h('span.photo-uploader__pick-icon', { html: iconSvg('camera', 24) }),
-          h('span.photo-uploader__pick-text', { text: 'Сфотографировать накладную' }),
-          h('span.photo-uploader__pick-hint', {
-            text: options.hint || 'Фото уменьшится на телефоне — загрузится быстро'
-          })
-        )
-      );
-      return;
-    }
-
-    setContent(box,
-      h('div.photo-uploader__preview',
-        h('img.photo-uploader__thumb', { src: photo.preview, alt: 'Фото накладной' }),
-        h('div.photo-uploader__meta',
-          h('div.photo-uploader__size', { text: fileSize(photo.size) }),
-          h('div.photo-uploader__format', {
-            text: photo.mime === 'image/webp' ? 'WebP' : 'JPEG'
-          }),
-          h('div.photo-uploader__actions',
-            h('button.btn.btn--quiet.btn--sm', {
-              type: 'button',
-              onclick: () => input.click()
-            }, 'Переснять'),
-            h('button.btn.btn--quiet.btn--sm', {
-              type: 'button',
-              onclick: clear
-            }, 'Убрать')
-          )
-        )
-      )
+  /** Блок «идёт сжатие». */
+  function busyBlock(text) {
+    return h('div.photo-uploader__busy',
+      h('span.spinner'),
+      h('span.photo-uploader__busy-text', { text: text })
     );
   }
 
-  /**
-   * Обработка выбранного файла.
-   * @param {File} file
-   */
-  async function handleFiles(file) {
-    if (!file) return;
+  /** Одно превью с кнопкой удаления. */
+  function renderItem(photo, index) {
+    return h('div.photo-uploader__item',
+      h('img.photo-uploader__thumb', {
+        src: photo.preview,
+        alt: 'Накладная ' + (index + 1),
+        loading: 'lazy'
+      }),
+      h('span.photo-uploader__item-meta', {
+        text: fileSize(photo.size) + ' · ' + (photo.mime === 'image/webp' ? 'WebP' : 'JPEG')
+      }),
+      h('button.photo-uploader__remove', {
+        type: 'button',
+        'aria-label': 'Убрать это фото',
+        title: 'Убрать это фото',
+        onclick: () => removeAt(index)
+      }, h('span', { html: iconSvg('close', 16) }))
+    );
+  }
 
-    if (file.type && file.type.indexOf('image/') !== 0) {
-      toastError('Это не изображение. Выберите фотографию накладной.');
+  /** Отрисовка блока. */
+  function render() {
+    setContent(box);
+
+    if (photos.length) {
+      box.appendChild(h('div.photo-uploader__grid',
+        photos.map((photo, index) => renderItem(photo, index))
+      ));
+    }
+
+    if (busyCount > 0) {
+      box.appendChild(busyBlock(busyCount === 1
+        ? 'Сжимаем фотографию…'
+        : 'Сжимаем фотографии: осталось ' + busyCount));
+    }
+
+    box.appendChild(h('div.photo-uploader__buttons',
+      h('button.btn.btn--ghost.btn--block', {
+        type: 'button',
+        onclick: () => cameraInput.click()
+      },
+        h('span.btn__icon', { html: iconSvg('camera', 18) }),
+        photos.length ? 'Снять ещё' : 'Снять накладную'
+      ),
+      h('button.btn.btn--ghost.btn--block', {
+        type: 'button',
+        onclick: () => galleryInput.click()
+      },
+        h('span.btn__icon', { html: iconSvg('image', 18) }),
+        'Из галереи'
+      )
+    ));
+
+    box.appendChild(h('span.photo-uploader__hint', {
+      text: photos.length
+        ? 'Снимков: ' + photos.length + ' из ' + maxPhotos + '. Ненужный уберите крестиком.'
+        : (options.hint || 'Фото уменьшаются на телефоне — загружаются быстро')
+    }));
+  }
+
+  /**
+   * Обработка выбранных или снятых файлов.
+   * @param {FileList} fileList
+   */
+  async function takeFiles(fileList) {
+    const files = Array.prototype.slice.call(fileList || []).filter((file) => {
+      if (file.type && file.type.indexOf('image/') !== 0) {
+        toastError('Это не изображение: ' + (file.name || 'файл'));
+        return false;
+      }
+      return true;
+    });
+
+    if (!files.length) return;
+
+    const room = maxPhotos - photos.length;
+    if (room <= 0) {
+      toastWarning('К одной закупке можно приложить не больше ' + maxPhotos + ' фото');
       return;
     }
 
-    busy = true;
+    const accepted = files.slice(0, room);
+    if (accepted.length < files.length) {
+      toastWarning('Взяли ' + accepted.length + ' фото — больше ' + maxPhotos + ' к одной закупке не приложить');
+    }
+
+    busyCount += accepted.length;
     render();
 
-    try {
-      const result = await compressImage(file, limits);
-      // Читаем blob один раз: base64 и превью собираются из одной строки.
-      const base64 = await toBase64(result.blob);
-      if (destroyed) return;
+    // Сжимаем по одному: так память не скачет даже на слабом телефоне.
+    for (let i = 0; i < accepted.length; i++) {
+      try {
+        const result = await compressImage(accepted[i], limits);
+        const base64 = await toBase64(result.blob);
+        if (destroyed) return;
 
-      photo = {
-        name: file.name || 'Накладная',
-        mime: result.mime,
-        size: result.blob.size,
-        width: result.width,
-        height: result.height,
-        data: base64,
-        preview: 'data:' + result.mime + ';base64,' + base64
-      };
-    } catch (error) {
-      if (!destroyed) toastError(error.message || 'Не удалось обработать фотографию');
-    } finally {
-      if (!destroyed) {
-        busy = false;
-        render();
-        notify();
+        photos.push({
+          name: accepted[i].name || ('Накладная ' + (photos.length + 1)),
+          mime: result.mime,
+          size: result.blob.size,
+          width: result.width,
+          height: result.height,
+          data: base64,
+          preview: 'data:' + result.mime + ';base64,' + base64
+        });
+      } catch (error) {
+        if (!destroyed) toastError(error.message || 'Не удалось обработать фотографию');
+      } finally {
+        busyCount -= 1;
       }
     }
+
+    if (destroyed) return;
+    render();
+    notify();
   }
 
-  /** Убрать фотографию. */
+  /** Убрать одно фото. */
+  function removeAt(index) {
+    photos.splice(index, 1);
+    render();
+    notify();
+  }
+
+  /** Убрать все фотографии. */
   function clear() {
-    photo = null;
+    photos = [];
+    busyCount = 0;
     render();
     notify();
   }
 
   /**
-   * Подставить готовую фотографию (например, из черновика).
-   * @param {Object|null} value
+   * Подставить готовый список (например, из черновика).
+   * @param {Array|null} list
    */
-  function setPhoto(value) {
-    photo = value || null;
+  function setPhotos(list) {
+    photos = Array.isArray(list) ? list.slice() : [];
     render();
     notify();
   }
@@ -378,10 +447,13 @@ export function createPhotoUploader(props) {
 
   return {
     el: el,
-    getPhoto: () => photo,
-    setPhoto: setPhoto,
+    getPhotos: () => photos.slice(),
+    // Старое имя оставлено для мест, которым нужно только первое фото.
+    getPhoto: () => photos[0] || null,
+    setPhotos: setPhotos,
+    setPhoto: (value) => setPhotos(value ? [value] : []),
     clear: clear,
-    isBusy: () => busy,
+    isBusy: () => busyCount > 0,
     destroy: () => {
       destroyed = true;
     }

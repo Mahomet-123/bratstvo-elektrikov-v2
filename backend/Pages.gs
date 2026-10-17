@@ -311,7 +311,6 @@ function htmlPurchasesCard_(data) {
   }
 
   data.purchases.forEach(function (item) {
-    const imageUrl = driveImageUrl_(item.photoId) || str_(item.photo);
     html += '<div class="buy">' +
       '<div class="buy__head">' +
       '<div class="buy__name">' + escapeHtml_(item.material || '—') + '</div>' +
@@ -322,12 +321,20 @@ function htmlPurchasesCard_(data) {
       ' × ' + htmlMoney_(item.price) + '</div>' +
       (item.comment ? '<div class="buy__meta">' + escapeHtml_(item.comment) + '</div>' : '');
 
-    if (imageUrl) {
+    // Накладных может быть несколько — показываем все.
+    const photos = Array.isArray(item.photos) && item.photos.length
+      ? item.photos
+      : (item.photo ? [{ link: item.photo, id: item.photoId }] : []);
+
+    photos.forEach(function (photo) {
+      const imageUrl = driveImageUrl_(photo.id) || str_(photo.link);
+      if (!imageUrl) return;
       html += '<div class="buy__photo">' +
         '<a href="' + escapeHtml_(imageUrl) + '" target="_blank" rel="noopener">' +
         '<img src="' + escapeHtml_(imageUrl) + '" alt="Фото накладной" loading="lazy">' +
         '</a></div>';
-    }
+    });
+
     html += '</div>';
   });
 

@@ -201,5 +201,17 @@ export function clearCache() {
       /* не критично */
     }
   });
+  // Кэш объектов тоже убираем: после выхода данные чужого человека на
+  // устройстве оставаться не должны.
+  try {
+    const index = JSON.parse(localStorage.getItem('be.obj.index') || '[]');
+    (Array.isArray(index) ? index : []).forEach((item) => {
+      localStorage.removeItem('be.obj.' + item.id);
+    });
+    localStorage.removeItem('be.obj.index');
+  } catch (error) {
+    /* не критично */
+  }
+
   store.patch({ bundle: null, bundleAt: '', objects: [] });
 }

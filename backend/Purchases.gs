@@ -34,10 +34,40 @@ function purchasesList_(token, id) {
 }
 
 /**
+ * Разбор фотографий накладной из запроса.
+ *
+ * Поддерживаем и список (`photos`), и одиночное фото (`photo`) — так старые
+ * записи из очереди на телефоне отправляются без ошибок.
+ *
+ * @param {Object} p — полезная нагрузка закупки
+ * @return {{links: Array<string>, ids: Array<string>}}
+ */
+function purchasePhotos_(p) {
+  const list = Array.isArray(p.photos) && p.photos.length ? p.photos : null;
+  const links = [];
+  const ids = [];
+
+  if (list) {
+    list.forEach(function (item) {
+      const link = str_(typeof item === 'string' ? item : item && item.link);
+      if (!link) return;
+      links.push(link);
+      ids.push(str_(typeof item === 'string' ? '' : item && item.id));
+    });
+  } else if (str_(p.photo)) {
+    links.push(str_(p.photo));
+    ids.push(str_(p.photoId));
+  }
+
+  return { links: links, ids: ids };
+}
+
+/**
  * Добавление закупки.
  * @param {string} token
  * @param {string} id — объект
- * @param {Object} purchase — { date, material, qty, unit, price, comment, photo, photoId }
+ * @param {Object} purchase — { date, material, qty, unit, price, comment,
+ *                              photos: [{link, id}] | photo, photoId }
  * @return {Object} { ok, purchase }
  */
 function addPurchase_(token, id, purchase) {
@@ -57,6 +87,7 @@ function addPurchase_(token, id, purchase) {
 
   const date = isoDate_(p.date) || todayIso_();
   const sum = round2_(qty * price);
+  const photos = purchasePhotos_(p);
 
   return withLock_(function () {
     const record = {
@@ -68,8 +99,9 @@ function addPurchase_(token, id, purchase) {
       'цена': price,
       'сумма': sum,
       'комментарий': truncate_(p.comment, 500),
-      'фото': truncate_(p.photo, 500),
-      'фото id': truncate_(p.photoId, 200),
+      // Несколько накладных помещаются в одну ячейку списком ссылок.
+      'фото': truncate_(joinCellList_(photos.links), 2000),
+      'фото id': truncate_(joinCellList_(photos.ids), 2000),
       'создано': nowIso_()
     };
 

@@ -19,6 +19,7 @@ import { toastSuccess, toastError } from '../../core/toast.js';
 import { confirmDialog } from '../../core/modal.js';
 import { describeError } from '../../api/apiClient.js';
 import { api } from '../../api/endpoints.js';
+import { runBusy } from '../../core/busy.js';
 import { copyText } from '../../core/clipboard.js';
 import { statusBadge } from '../common/badges.js';
 
@@ -102,7 +103,7 @@ export function createCabinet(props) {
         h('div.cabinet__actions',
           h('button.btn.btn--primary.btn--block', {
             type: 'button',
-            onclick: () => doCopy()
+            onclick: (event) => doCopy(event.currentTarget)
           }, 'Скопировать ссылку'),
           h('button.btn.btn--ghost.btn--block', {
             type: 'button',
@@ -114,7 +115,7 @@ export function createCabinet(props) {
         }),
         h('button.btn.btn--danger.btn--block.cabinet__revoke', {
           type: 'button',
-          onclick: () => doRevoke()
+          onclick: (event) => doRevoke(event.currentTarget)
         }, 'Закрыть доступ')
       )
     );
@@ -133,7 +134,7 @@ export function createCabinet(props) {
         }),
         h('button.btn.btn--primary.btn--block', {
           type: 'button',
-          onclick: () => doOpen()
+          onclick: (event) => doOpen(event.currentTarget)
         }, 'Открыть доступ и получить ссылку')
       )
     );
@@ -191,23 +192,25 @@ export function createCabinet(props) {
   }
 
   /** Открытие доступа. */
-  async function doOpen() {
-    try {
-      const result = await api.cabinetLink(id);
-      toastSuccess('Доступ открыт — ссылку можно отправлять клиенту');
-      state = Object.assign({}, state, {
-        enabled: true,
-        url: result.url,
-        object: Object.assign({}, state && state.object, { hasCabinet: true })
-      });
-      render();
-    } catch (error) {
-      toastError(describeError(error));
-    }
+  async function doOpen(button) {
+    await runBusy(button, 'Открываем доступ…', async () => {
+      try {
+        const result = await api.cabinetLink(id);
+        toastSuccess('Доступ открыт — ссылку можно отправлять клиенту');
+        state = Object.assign({}, state, {
+          enabled: true,
+          url: result.url,
+          object: Object.assign({}, state && state.object, { hasCabinet: true })
+        });
+        render();
+      } catch (error) {
+        toastError(describeError(error));
+      }
+    });
   }
 
   /** Закрытие доступа. */
-  async function doRevoke() {
+  async function doRevoke(button) {
     const confirmed = await confirmDialog({
       title: 'Закрыть доступ клиенту?',
       text: 'Ссылка перестанет работать сразу. Если клиент сохранил её, она всё равно не откроется — ' +
@@ -217,20 +220,24 @@ export function createCabinet(props) {
     });
     if (!confirmed) return;
 
-    try {
-      await api.cabinetRevoke(id);
-      toastSuccess('Доступ закрыт, ссылка погашена');
-      await load();
-    } catch (error) {
-      toastError(describeError(error));
-    }
+    await runBusy(button, 'Закрываем доступ…', async () => {
+      try {
+        await api.cabinetRevoke(id);
+        toastSuccess('Доступ закрыт, ссылка погашена');
+        await load();
+      } catch (error) {
+        toastError(describeError(error));
+      }
+    });
   }
 
   /** Копирование ссылки в буфер обмена. */
-  async function doCopy() {
-    const done = await copyText(state.url);
-    if (done) toastSuccess('Ссылка скопирована — можно вставить в сообщение');
-    else toastError('Не удалось скопировать. Выделите ссылку и скопируйте вручную.');
+  async function doCopy(button) {
+    await runBusy(button, 'Копируем…', async () => {
+      const done = await copyText(state.url);
+      if (done) toastSuccess('Ссылка скопирована — можно вставить в сообщение');
+      else toastError('Не удалось скопировать. Выделите ссылку и скопируйте вручную.');
+    });
   }
 
   /** Открыть страницу кабинета в новой вкладке. */

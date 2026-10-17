@@ -12,6 +12,7 @@ import { loadStyles } from '../../core/styles.js';
 import { iconSvg } from '../../core/icons.js';
 import { store, saveSession, clearCache } from '../../core/store.js';
 import bundle from '../../core/bundle.js';
+import { runBusy } from '../../core/busy.js';
 import { toastSuccess, toastError } from '../../core/toast.js';
 import { confirmDialog } from '../../core/modal.js';
 import { describeError } from '../../api/apiClient.js';
@@ -58,24 +59,21 @@ export function createProfile(props) {
       if (newCode !== repeat) return toastError('Новый код и повтор не совпадают');
       if (newCode === oldCode) return toastError('Новый код совпадает с текущим');
 
-      changeBtn.disabled = true;
-      changeBtn.textContent = 'Сохраняем…';
-      try {
-        await api.changeCode(oldCode, newCode);
-        toastSuccess('Код изменён. Используйте его при следующем входе.');
-        oldInput.value = '';
-        newInput.value = '';
-        repeatInput.value = '';
-        store.patch({ mustChangeCode: false });
-        const saved = store.get().session;
-        if (saved) saveSession(saved, false);
-        renderAlert();
-      } catch (error) {
-        toastError(describeError(error));
-      } finally {
-        changeBtn.disabled = false;
-        changeBtn.textContent = 'Сменить код';
-      }
+      await runBusy(changeBtn, 'Сохраняем…', async () => {
+        try {
+          await api.changeCode(oldCode, newCode);
+          toastSuccess('Код изменён. Используйте его при следующем входе.');
+          oldInput.value = '';
+          newInput.value = '';
+          repeatInput.value = '';
+          store.patch({ mustChangeCode: false });
+          const saved = store.get().session;
+          if (saved) saveSession(saved, false);
+          renderAlert();
+        } catch (error) {
+          toastError(describeError(error));
+        }
+      });
     }
   },
     h('div.card__head', h('div.card__title', { text: 'Код доступа' })),
@@ -101,12 +99,13 @@ export function createProfile(props) {
   const statusRows = h('div.card');
   const manualSendBtn = h('button.btn.btn--ghost.btn--block', {
     type: 'button',
-    onclick: () => {
-      if (typeof options.onManualSend === 'function') {
-        options.onManualSend();
-      } else {
+    onclick: async (event) => {
+      const button = event.currentTarget;
+      if (typeof options.onManualSend !== 'function') {
         toastSuccess('Очередь пуста — отправлять нечего');
+        return;
       }
+      await runBusy(button, 'Отправляем…', () => options.onManualSend());
     }
   }, 'Отправить очередь сейчас');
 
@@ -114,12 +113,13 @@ export function createProfile(props) {
   // на индикатор свежести в шапке.
   const refreshDataBtn = h('button.btn.btn--ghost.btn--block', {
     type: 'button',
-    onclick: () => {
-      if (typeof options.onRefreshData === 'function') {
-        options.onRefreshData();
-      } else {
+    onclick: async (event) => {
+      const button = event.currentTarget;
+      if (typeof options.onRefreshData !== 'function') {
         toastSuccess('Данные уже свежие');
+        return;
       }
+      await runBusy(button, 'Обновляем…', () => options.onRefreshData());
     }
   }, 'Обновить данные с сервера');
 
@@ -161,6 +161,21 @@ export function createProfile(props) {
     )
     : null;
 
+  /* --- Справочник (доступен всем) --- */
+
+  const handbookCard = h('div',
+    h('div.page__section-title', { text: 'Справочник' }),
+    h('div.card',
+      h('button.row.row--tap', { type: 'button', onclick: () => navigate('/prices') },
+        h('span.row__main',
+          h('span.row__title', { text: 'Прайс цен' }),
+          h('span.row__sub', { text: 'Все работы и материалы по разделам' })
+        ),
+        h('span.row__side', { html: iconSvg('calc', 20) })
+      )
+    )
+  );
+
   /* --- О приложении --- */
 
   const aboutCard = h('div',
@@ -181,7 +196,7 @@ export function createProfile(props) {
 
   const logoutBtn = h('button.btn.btn--danger.btn--block.profile__logout', {
     type: 'button',
-    onclick: async () => {
+    onclick: async (event) => {
       const confirmed = await confirmDialog({
         title: 'Выйти из приложения?',
         text: 'Локальные данные будут очищены. Неотправленные записи останутся в очереди на телефоне.',
@@ -190,14 +205,16 @@ export function createProfile(props) {
       });
       if (!confirmed) return;
 
-      try {
-        await api.logout();
-      } catch (error) {
-        // Даже если сервер недоступен, выходим локально.
-      }
-      clearCache();
-      saveSession(null);
-      if (typeof options.onLogout === 'function') options.onLogout();
+      await runBusy(event.currentTarget, 'Выходим…', async () => {
+        try {
+          await api.logout();
+        } catch (error) {
+          // Даже если сервер недоступен, выходим локально.
+        }
+        clearCache();
+        saveSession(null);
+        if (typeof options.onLogout === 'function') options.onLogout();
+      });
     }
   }, 'Выйти');
 
@@ -217,6 +234,7 @@ export function createProfile(props) {
     h('div.page__section', codeForm),
     h('div.page__section', statusCard),
     leaderCard ? h('div.page__section', leaderCard) : null,
+    h('div.page__section', handbookCard),
     h('div.page__section', aboutCard),
     logoutBtn
   );

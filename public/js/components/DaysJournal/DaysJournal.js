@@ -17,6 +17,8 @@ import { confirmDialog } from '../../core/modal.js';
 import { describeError } from '../../api/apiClient.js';
 import { api } from '../../api/endpoints.js';
 import { hours, dateWithWeekday, today, countLabel } from '../../core/format.js';
+import { runBusy } from '../../core/busy.js';
+import objectCache from '../../core/objectCache.js';
 import { sendNow, enqueue, isOfflineError } from '../../core/sync.js';
 import { duplicateBadge } from '../common/badges.js';
 
@@ -155,7 +157,11 @@ export function createDaysJournal(props) {
       h('span.day-record__main.row__main',
         h('span.day-record__top',
           h('span.day-record__date', { text: dateWithWeekday(day.date) }),
-          day.duplicate ? duplicateBadge() : null
+          day.duplicate ? duplicateBadge() : null,
+          // Запись ещё не ушла на сервер — говорим об этом прямо.
+          day.pending
+            ? h('span.badge.badge--muted', { text: 'ждёт отправки' })
+            : null
         ),
         day.work
           ? h('span.day-record__work', { text: day.work })
@@ -165,11 +171,13 @@ export function createDaysJournal(props) {
         })
       ),
       h('span.row__side',
-        h('button.day-record__remove', {
-          type: 'button',
-          'aria-label': 'Удалить запись',
-          onclick: () => removeDay(day)
-        }, h('span', { html: iconSvg('trash', 18) }))
+        day.pending
+          ? null
+          : h('button.day-record__remove', {
+            type: 'button',
+            'aria-label': 'Удалить запись',
+            onclick: (event) => removeDay(day, event.currentTarget)
+          }, h('span', { html: iconSvg('trash', 18) }))
       )
     );
   }
@@ -180,21 +188,22 @@ export function createDaysJournal(props) {
 
   /** Загрузка журнала. */
   async function load() {
-    loading = true;
-    renderList();
+    // Сохранённый журнал показываем сразу — экран открывается без ожидания.
+    const cached = objectCache.part(id, 'days');
+    if (cached) applyDays(cached);
+
+    loading = !cached;
+    if (!cached) renderList();
+
     try {
       const data = await api.daysList(id);
-      days = (data && data.days) || [];
-      summary = { hours: (data && data.hours) || 0, count: (data && data.count) || 0 };
-      loading = false;
-      renderSummary();
-      renderList();
-
-      if (typeof options.onTitle === 'function') {
-        options.onTitle('Журнал дней', summary.count ? countLabel(summary.count, ['запись', 'записи', 'записей']) : '');
-      }
+      objectCache.put(id, 'days', data);
+      applyDays(data);
     } catch (error) {
       loading = false;
+      // Журнал уже показан из сохранённого — молчим, чтобы не мешать.
+      if (cached) return;
+
       clear(listBox);
       listBox.appendChild(h('div.empty',
         h('div.empty__icon.day-journal__empty-icon', { html: iconSvg('alert', 26) }),
@@ -205,6 +214,55 @@ export function createDaysJournal(props) {
         )
       ));
     }
+  }
+
+  /**
+   * Показать журнал: сохранённый и свежий приходят одной формы.
+   * К записям с сервера добавляем те, что ещё ждут отправки, — иначе они
+   * пропадали бы с экрана после каждого обновления.
+   */
+  function applyDays(data) {
+    days = mergePending((data && data.days) || []);
+    const total = days.reduce((acc, day) => acc + (Number(day.hours) || 0), 0);
+    summary = { hours: Math.round(total * 100) / 100, count: days.length };
+    loading = false;
+    renderSummary();
+    renderList();
+
+    if (typeof options.onTitle === 'function') {
+      options.onTitle('Журнал дней', summary.count ? countLabel(summary.count, ['запись', 'записи', 'записей']) : '');
+    }
+
+    // Держим сохранённое на устройстве в согласии с экраном. Без этого после
+    // добавления записи кэш оставался прежним, и следующий заход показывал
+    // пустой журнал, пока не придёт ответ сервера.
+    // Записи, ждущие отправки, в кэш не кладём: они хранятся отдельно
+    // и подмешиваются заново — иначе после отправки они задвоятся.
+    const saved = days.filter((day) => !day.pending);
+    objectCache.put(id, 'days', { days: saved, hours: summary.hours, count: saved.length });
+  }
+
+  /** Добавить к списку с сервера записи, которые ещё ждут отправки. */
+  function mergePending(list) {
+    const pend = objectCache.pending(id, 'day');
+    const known = {};
+    list.forEach((day) => { known[day.id] = true; });
+
+    const merged = list.concat(pend.filter((day) => !known[day.id]));
+    merged.sort((a, b) => {
+      if (a.date === b.date) return String(a.created || '') < String(b.created || '') ? 1 : -1;
+      return a.date < b.date ? 1 : -1;
+    });
+    return merged;
+  }
+
+  /**
+   * Добавить запись в список на экране, не перечитывая журнал с сервера.
+   * Так после сохранения не появляется ни ожидания, ни мигания списка.
+   */
+  function appendLocal(record) {
+    if (!record) return;
+    applyDays({ days: days.concat([record]) });
   }
 
   /** Добавление записи. */
@@ -228,9 +286,6 @@ export function createDaysJournal(props) {
       return;
     }
 
-    submitBtn.disabled = true;
-    submitBtn.textContent = 'Сохраняем…';
-
     const payload = {
       objectId: id,
       day: {
@@ -241,42 +296,53 @@ export function createDaysJournal(props) {
       }
     };
 
-    try {
-      let result = null;
+    await runBusy(submitBtn, 'Сохраняем…', async () => {
       try {
-        result = await sendNow('day', payload);
-      } catch (error) {
-        if (!isOfflineError(error)) throw error;
-        // Связи нет — запись ждёт на телефоне и уйдёт сама, когда связь вернётся.
-        await enqueue('day', payload, 'День: ' + dateWithWeekday(payload.day.date));
-        toastWarning('Нет сети — запись сохранена на телефоне и отправится сама', 6000);
+        let result = null;
+        try {
+          result = await sendNow('day', payload);
+        } catch (error) {
+          if (!isOfflineError(error)) throw error;
+          // Связи нет — запись остаётся на телефоне и уйдёт сама, когда связь
+          // вернётся. Показываем её сразу: человек должен видеть свою работу.
+          const queueId = await enqueue('day', payload, 'День: ' + dateWithWeekday(payload.day.date));
+          const local = Object.assign({}, payload.day, {
+            id: 'pending-' + queueId,
+            queueId: queueId,
+            created: new Date().toISOString(),
+            pending: true
+          });
+          objectCache.addPending(id, 'day', local);
+          appendLocal(local);
+          toastWarning('Нет сети — запись сохранена на телефоне и отправится сама', 6000);
+          workInput.value = '';
+          hoursInput.value = '';
+          hoursInput.focus();
+          return;
+        }
+
+        if (result.duplicate) {
+          toastWarning('Запись сохранена и помечена как повторная — за эту дату у этого исполнителя уже есть часы', 5000);
+        } else {
+          toastSuccess('Запись добавлена');
+        }
+
+        // Очищаем только описание: дату и исполнителя оставляем — удобно вводить подряд.
         workInput.value = '';
         hoursInput.value = '';
         hoursInput.focus();
-        return;
-      }
 
-      if (result.duplicate) {
-        toastWarning('Запись сохранена и помечена как повторная — за эту дату у этого исполнителя уже есть часы', 5000);
-      } else {
-        toastSuccess('Запись добавлена');
+        // Запись уже пришла с сервера — добавляем её на экран без перезагрузки.
+        if (result.day) appendLocal(result.day);
+        else await load();
+      } catch (error) {
+        toastError(describeError(error));
       }
-
-      // Очищаем только описание: дату и исполнителя оставляем — удобно вводить подряд.
-      workInput.value = '';
-      hoursInput.value = '';
-      hoursInput.focus();
-      await load();
-    } catch (error) {
-      toastError(describeError(error));
-    } finally {
-      submitBtn.disabled = false;
-      submitBtn.textContent = 'Записать день';
-    }
+    });
   }
 
   /** Удаление записи. */
-  async function removeDay(day) {
+  async function removeDay(day, button) {
     const confirmed = await confirmDialog({
       title: 'Удалить запись?',
       text: 'Запись за ' + dateWithWeekday(day.date) + ' будет удалена из журнала.',
@@ -285,13 +351,16 @@ export function createDaysJournal(props) {
     });
     if (!confirmed) return;
 
-    try {
-      await api.daysRemove(id, day.id);
-      toastSuccess('Запись удалена');
-      await load();
-    } catch (error) {
-      toastError(describeError(error));
-    }
+    await runBusy(button, 'Удаляем…', async () => {
+      try {
+        await api.daysRemove(id, day.id);
+        toastSuccess('Запись удалена');
+        objectCache.markStale(id);
+        await load();
+      } catch (error) {
+        toastError(describeError(error));
+      }
+    });
   }
 
   loadStyles('js/components/DaysJournal/styles/DaysJournal.css');

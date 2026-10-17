@@ -13,6 +13,8 @@ import { h, setContent, clear } from '../../core/dom.js';
 import { loadStyles } from '../../core/styles.js';
 import { iconSvg } from '../../core/icons.js';
 import { store, cachePrices, readCachedPrices } from '../../core/store.js';
+import { runBusy } from '../../core/busy.js';
+import objectCache from '../../core/objectCache.js';
 import { toastSuccess, toastError } from '../../core/toast.js';
 import { describeError } from '../../api/apiClient.js';
 import { api } from '../../api/endpoints.js';
@@ -416,12 +418,33 @@ export function createCalculator(props) {
     }
 
     saving = true;
-    saveBtn.disabled = true;
-    saveBtn.textContent = 'Сохраняем…';
 
-    try {
-      const payload = {
-        rows: rows.map((row) => ({
+    await runBusy(saveBtn, 'Сохраняем…', async () => {
+      try {
+        const payload = {
+          rows: rows.map((row) => ({
+            id: row.id,
+            section: row.section,
+            position: row.position,
+            name: row.name,
+            unit: row.unit,
+            price: row.price,
+            qty: row.qty,
+            coeff: row.coeff,
+            note: row.note || ''
+          })),
+          coefficient: params.coefficient,
+          materialCost: params.materialCost,
+          equipmentCost: params.equipmentCost,
+          discount: params.discount,
+          discountType: params.discountType
+        };
+
+        const result = await api.calcSave(id, payload);
+        const estimate = result.estimate;
+
+        // Переходим на числа, которые посчитал сервер.
+        rows = estimate.rows.map((row) => ({
           id: row.id,
           section: row.section,
           position: row.position,
@@ -430,94 +453,88 @@ export function createCalculator(props) {
           price: row.price,
           qty: row.qty,
           coeff: row.coeff,
-          note: row.note || ''
-        })),
-        coefficient: params.coefficient,
-        materialCost: params.materialCost,
-        equipmentCost: params.equipmentCost,
-        discount: params.discount,
-        discountType: params.discountType
-      };
+          note: row.note
+        }));
+        params = {
+          coefficient: estimate.coefficient,
+          materialCost: estimate.materialCost,
+          equipmentCost: estimate.equipmentCost,
+          discount: estimate.discountValue,
+          discountType: estimate.discountType
+        };
 
-      const result = await api.calcSave(id, payload);
-      const estimate = result.estimate;
-
-      // Переходим на числа, которые посчитал сервер.
-      rows = estimate.rows.map((row) => ({
-        id: row.id,
-        section: row.section,
-        position: row.position,
-        name: row.name,
-        unit: row.unit,
-        price: row.price,
-        qty: row.qty,
-        coeff: row.coeff,
-        note: row.note
-      }));
-      params = {
-        coefficient: estimate.coefficient,
-        materialCost: estimate.materialCost,
-        equipmentCost: estimate.equipmentCost,
-        discount: estimate.discountValue,
-        discountType: estimate.discountType
-      };
-
-      renderRows();
-      renderParams();
-      refreshNumbers();
-      toastSuccess('Расчёт сохранён: ' + money(estimate.total));
-    } catch (error) {
-      toastError(describeError(error));
-    } finally {
-      saving = false;
-      saveBtn.disabled = false;
-      saveBtn.textContent = 'Сохранить расчёт';
-    }
+        renderRows();
+        renderParams();
+        refreshNumbers();
+        // Расчёт изменился — сохраняем свежие числа на устройстве.
+        objectCache.put(id, 'calc', { object: object, estimate: estimate });
+        toastSuccess('Расчёт сохранён: ' + money(estimate.total));
+      } catch (error) {
+        toastError(describeError(error));
+      } finally {
+        saving = false;
+      }
+    });
   }
 
   /* --------------------------------------------------------------------------
    * Загрузка
    * ------------------------------------------------------------------------ */
 
+  /** Показать расчёт: сохранённый и свежий приходят одной формы. */
+  function applyCalc(card) {
+    if (!card) return;
+
+    object = card.object;
+    const estimate = card.estimate || {};
+
+    rows = (estimate.rows || []).map((row) => ({
+      id: row.id,
+      section: row.section,
+      position: row.position,
+      name: row.name,
+      unit: row.unit,
+      price: row.price,
+      qty: row.qty,
+      coeff: row.coeff,
+      note: row.note
+    }));
+    params = {
+      coefficient: estimate.coefficient || 1,
+      materialCost: estimate.materialCost || 0,
+      equipmentCost: estimate.equipmentCost || 0,
+      discount: estimate.discountValue || 0,
+      discountType: estimate.discountType || 'sum'
+    };
+
+    clear(errorBox);
+    renderRows();
+    renderParams();
+    refreshNumbers();
+
+    if (typeof options.onTitle === 'function') {
+      options.onTitle('Расчёт', object ? '№ ' + object.numberLabel : '');
+    }
+  }
+
   /** Загрузка объекта, расчёта и прайса. */
   async function load() {
     // Прайс: сначала кэш, затем сервер.
-    const cached = readCachedPrices(true) || store.get().prices;
-    if (cached) prices = cached;
+    const cachedPrices = readCachedPrices(true) || store.get().prices;
+    if (cachedPrices) prices = cachedPrices;
+
+    // Сохранённый расчёт показываем сразу — экран открывается без ожидания.
+    const cached = objectCache.part(id, 'calc');
+    if (cached) applyCalc(cached);
 
     try {
-      const card = await api.calcGet(id);
-      object = card.object;
-      const estimate = card.estimate;
-
-      rows = (estimate.rows || []).map((row) => ({
-        id: row.id,
-        section: row.section,
-        position: row.position,
-        name: row.name,
-        unit: row.unit,
-        price: row.price,
-        qty: row.qty,
-        coeff: row.coeff,
-        note: row.note
-      }));
-      params = {
-        coefficient: estimate.coefficient || 1,
-        materialCost: estimate.materialCost || 0,
-        equipmentCost: estimate.equipmentCost || 0,
-        discount: estimate.discountValue || 0,
-        discountType: estimate.discountType || 'sum'
-      };
-
-      clear(errorBox);
-      renderRows();
-      renderParams();
-      refreshNumbers();
-
-      if (typeof options.onTitle === 'function') {
-        options.onTitle('Расчёт', object ? '№ ' + object.numberLabel : '');
-      }
+      const fresh = await api.calcGet(id);
+      objectCache.put(id, 'calc', fresh);
+      applyCalc(fresh);
     } catch (error) {
+      // Расчёт уже показан из сохранённого — молчим, чтобы не мешать.
+      if (object) return;
+
       setContent(errorBox, h('div.empty',
         h('div.empty__icon.calc__empty-icon', { html: iconSvg('alert', 26) }),
         h('div.empty__title', { text: 'Не удалось загрузить расчёт' }),

@@ -13,6 +13,7 @@ import { toastError } from '../../core/toast.js';
 import { describeError } from '../../api/apiClient.js';
 import { api } from '../../api/endpoints.js';
 import bundle from '../../core/bundle.js';
+import { runBusy } from '../../core/busy.js';
 import { CONFIG } from '../../config.js';
 
 /**
@@ -23,7 +24,7 @@ import { CONFIG } from '../../config.js';
  * @param {boolean=} props.allowStatus — показывать выбор статуса
  * @param {boolean=} props.hideSubmit — не показывать свою кнопку отправки
  * @param {Function} props.onSubmit — (data) => Promise, вызывается при отправке
- * @return {Object} { el, setBusy, getData }
+ * @return {Object} { el, getData }
  */
 export function createObjectForm(props) {
   const options = props || {};
@@ -91,14 +92,16 @@ export function createObjectForm(props) {
         return;
       }
 
-      setBusy(true);
-      try {
-        await options.onSubmit(data);
-      } catch (error) {
-        toastError(describeError(error));
-      } finally {
-        setBusy(false);
-      }
+      await runBusy(submitBtn, 'Сохраняем…', async () => {
+        setFieldsDisabled(true);
+        try {
+          await options.onSubmit(data);
+        } catch (error) {
+          toastError(describeError(error));
+        } finally {
+          setFieldsDisabled(false);
+        }
+      });
     }
   },
     h('label.field',
@@ -127,10 +130,12 @@ export function createObjectForm(props) {
     options.hideSubmit ? null : h('div.object-form__actions', submitBtn)
   );
 
-  /** Блокировка формы на время отправки. */
-  function setBusy(busy) {
-    submitBtn.disabled = busy;
-    submitBtn.textContent = busy ? 'Сохраняем…' : (options.submitLabel || 'Сохранить');
+  /**
+   * Блокировка полей на время отправки.
+   * Кнопка занятостью не управляет: этим занимается runBusy — он же
+   * показывает значок ожидания и подпись.
+   */
+  function setFieldsDisabled(busy) {
     [titleInput, clientInput, addressInput, phoneInput, statusSelect].forEach((field) => {
       field.disabled = busy;
     });
@@ -138,7 +143,7 @@ export function createObjectForm(props) {
 
   loadStyles('js/components/ObjectForm/styles/ObjectForm.css');
 
-  return { el: form, setBusy: setBusy, getData: getData };
+  return { el: form, getData: getData };
 }
 
 /**
