@@ -11,7 +11,11 @@
   align-items: center;
   justify-content: center;
   padding: var(--sp-3);
-  background: rgba(8, 12, 20, 0.92);
+  /* На телефоне с «бровью» кнопки не должны упираться в системную полосу. */
+  padding-bottom: calc(var(--sp-3) + var(--safe-bottom, 0px));
+  /* Подложка непрозрачная: сквозь полупрозрачную просвечивала страница,
+     и её кнопки читались поверх окна съёмки. */
+  background: #0b0f16;
 }
 
 .camera {
@@ -20,15 +24,19 @@
   gap: var(--sp-3);
   width: 100%;
   max-width: 520px;
+  height: 100%;
   max-height: 100%;
 }
 
 .camera__stage {
   position: relative;
+  flex: 1 1 auto;
+  /* Без min-height: 0 предпросмотр не ужимался: на широком экране
+     кнопки съёмки уезжали за нижний край. */
+  min-height: 0;
   border-radius: var(--r-l);
   overflow: hidden;
   background: #000;
-  aspect-ratio: 3 / 4;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -42,6 +50,7 @@
 }
 
 .camera__counter {
+  flex: none;
   font-size: 13px;
   color: rgba(255, 255, 255, 0.78);
   text-align: center;
@@ -49,6 +58,7 @@
 
 /* Снятые кадры — полоской под предпросмотром. */
 .camera__grid {
+  flex: none;
   display: flex;
   gap: var(--sp-2);
   overflow-x: auto;
@@ -96,6 +106,7 @@
 }
 
 .camera__controls {
+  flex: none;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -129,6 +140,7 @@
 }
 
 .camera__actions {
+  flex: none;
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: var(--sp-2);

@@ -693,6 +693,24 @@ async function main() {
     check('кнопка съёмки открывает камеру', cameraOpen);
 
     if (cameraOpen) {
+      // Подложка обязана быть непрозрачной, а кнопки — помещаться на экране:
+      // полупрозрачная показывала страницу и её кнопки поверх съёмки.
+      const layout = await page.evaluate(() => {
+        const overlay = document.querySelector('.camera-overlay');
+        const actions = document.querySelector('.camera__actions');
+        const rect = actions ? actions.getBoundingClientRect() : null;
+        return {
+          opaque: getComputedStyle(overlay).backgroundColor.indexOf('rgba') === -1,
+          bottom: rect ? Math.round(rect.bottom) : 0,
+          windowHeight: window.innerHeight
+        };
+      });
+      check('окно съёмки не просвечивает страницей', layout.opaque,
+        await page.evaluate(() => getComputedStyle(document.querySelector('.camera-overlay')).backgroundColor));
+      check('кнопки съёмки помещаются на экране',
+        layout.bottom > 0 && layout.bottom <= layout.windowHeight,
+        'низ кнопок ' + layout.bottom + ' из ' + layout.windowHeight);
+
       const live = await page.waitForFunction(() => {
         const video = document.querySelector('.camera__video');
         return Boolean(video && video.videoWidth > 0);

@@ -75,6 +75,11 @@ export function takePhotos(options) {
   const config = options || {};
   const limit = Math.max(1, Math.min(config.maxShots || MAX_SHOTS, MAX_SHOTS));
 
+  // Стили просим сразу, а окно показываем только после их загрузки: иначе
+  // на медленной связи окно на миг появляется неоформленным — огромное
+  // видео и кнопки за краем экрана.
+  const stylesReady = loadStyles('js/components/Camera/styles/Camera.css');
+
   return new Promise((resolve) => {
     const shots = [];
     let stream = null;
@@ -193,38 +198,45 @@ export function takePhotos(options) {
       return;
     }
 
-    document.body.appendChild(overlay);
-    document.body.style.overflow = 'hidden';
-    loadStyles('js/components/Camera/styles/Camera.css');
-    renderState();
+    /** Открыть поток с камеры в уже оформленное окно. */
+    function openStream() {
+      navigator.mediaDevices.getUserMedia({
+        video: {
+          facingMode: { ideal: 'environment' },
+          width: { ideal: 1920 },
+          height: { ideal: 1440 }
+        },
+        audio: false
+      }).then((media) => {
+        if (closed) {
+          media.getTracks().forEach((track) => track.stop());
+          return;
+        }
+        stream = media;
+        video.srcObject = media;
+        const play = video.play();
+        if (play && typeof play.catch === 'function') {
+          play.catch(() => {
+            /* автозапуск может быть отложен — картинка появится по нажатию */
+          });
+        }
+      }).catch((error) => {
+        // Камеру не дали: закрываем окно и говорим вызывающему, что не вышло.
+        closed = true;
+        overlay.remove();
+        document.body.style.overflow = '';
+        document.removeEventListener('keydown', onKey);
+        resolve({ supported: false, shots: [], error: error && error.name });
+      });
+    }
 
-    navigator.mediaDevices.getUserMedia({
-      video: {
-        facingMode: { ideal: 'environment' },
-        width: { ideal: 1920 },
-        height: { ideal: 1440 }
-      },
-      audio: false
-    }).then((media) => {
-      if (closed) {
-        media.getTracks().forEach((track) => track.stop());
-        return;
-      }
-      stream = media;
-      video.srcObject = media;
-      const play = video.play();
-      if (play && typeof play.catch === 'function') {
-        play.catch(() => {
-          /* автозапуск может быть отложен — картинка появится по нажатию */
-        });
-      }
-    }).catch((error) => {
-      // Камеру не дали: закрываем окно и говорим вызывающему, что не вышло.
-      closed = true;
-      overlay.remove();
-      document.body.style.overflow = '';
-      document.removeEventListener('keydown', onKey);
-      resolve({ supported: false, shots: [], error: error && error.name });
+    stylesReady.then(() => {
+      // Человек мог закрыть окно, пока грузились стили.
+      if (closed) return;
+      document.body.appendChild(overlay);
+      document.body.style.overflow = 'hidden';
+      renderState();
+      openStream();
     });
   });
 }
