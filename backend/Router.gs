@@ -369,6 +369,14 @@ const ROUTES_ = {
 
   /* --- Кабинет клиента --- */
 
+  'cabinet.data': {
+    auth: 'none',
+    handler: function (ctx) {
+      // Токен из ссылки и есть пропуск: вход в приложение не нужен.
+      return cabinetData_((ctx.payload || {}).token);
+    }
+  },
+
   'cabinet.link': {
     auth: 'user',
     handler: function (ctx) {

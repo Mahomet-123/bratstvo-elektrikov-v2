@@ -29,11 +29,12 @@ function cabinetBaseUrl_() {
  * @return {string}
  */
 function cabinetUrl_(object) {
-  const id = str_(object['id']);
   const token = str_(object['токен']);
-  if (!id || !token) return '';
-  return cabinetBaseUrl_() + '?page=cabinet&id=' + encodeURIComponent(id) +
-    '&token=' + encodeURIComponent(token);
+  if (!token) return '';
+  // Ссылка ведёт на сайт приложения и несёт только токен: он уникален,
+  // поэтому адрес получается коротким. Старые ссылки на скрипт продолжают
+  // работать — их уже разослали клиентам.
+  return str_(CONFIG.SITE_URL) + '#/c/' + encodeURIComponent(token);
 }
 
 /**
@@ -67,6 +68,35 @@ function cabinetRequireObject_(params) {
   assert_(str_(object['токен']) === token, 'Ссылка недействительна.', 'FORBIDDEN');
   assert_(bool_(object['кабинет']), 'Доступ в кабинет по этой ссылке закрыт.', 'FORBIDDEN');
   return object;
+}
+
+/**
+ * Объект по токену кабинета — для короткой ссылки без номера объекта.
+ * @param {string} token
+ * @return {Object} строка листа «Объекты»
+ */
+function cabinetRequireByToken_(token) {
+  const key = str_(token);
+  assert_(key, 'Ссылка неполная.', 'VALIDATION');
+
+  const object = findRow_(CONFIG.SHEETS.OBJECTS, function (row) {
+    return str_(row['токен']) === key;
+  });
+  assert_(object, 'Объект не найден.', 'NOT_FOUND');
+  assert_(bool_(object['кабинет']), 'Доступ в кабинет по этой ссылке закрыт.', 'FORBIDDEN');
+  return object;
+}
+
+/**
+ * Данные кабинета для сайта — без входа в приложение, по одному токену.
+ * @param {string} token — токен кабинета из короткой ссылки
+ * @return {Object} { object, estimate, days, purchases, totals, validity }
+ */
+function cabinetData_(token) {
+  const object = cabinetRequireByToken_(token);
+  const data = reportData_(object);
+  data.validity = cabinetValidityText_(object);
+  return data;
 }
 
 /**

@@ -399,7 +399,15 @@ async function main() {
   const browser = await puppeteer.launch({
     executablePath: CHROME,
     headless: 'new',
-    args: ['--no-sandbox', '--disable-dev-shm-usage', '--window-size=430,932']
+    args: [
+      '--no-sandbox',
+      '--disable-dev-shm-usage',
+      '--window-size=430,932',
+      // Подставная камера: проверяем настоящий путь съёмки через getUserMedia,
+      // а не только поле выбора файла с признаком capture.
+      '--use-fake-device-for-media-stream',
+      '--use-fake-ui-for-media-stream'
+    ]
   });
 
   try {
@@ -678,10 +686,33 @@ async function main() {
     check('к закупке прикладывается несколько фото', twoPhotos,
       (await countOf(page, '.photo-uploader__item')) + ' снимков');
 
+    // Камера на ноутбуке: поле с capture там бесполезно, поэтому кнопка
+    // «Снять» поднимает настоящее окно съёмки через getUserMedia.
+    await clickElement(page, '.photo-uploader__buttons .btn');
+    const cameraOpen = await waitFor(page, '.camera-overlay', 15000);
+    check('кнопка съёмки открывает камеру', cameraOpen);
+
+    if (cameraOpen) {
+      const live = await page.waitForFunction(() => {
+        const video = document.querySelector('.camera__video');
+        return Boolean(video && video.videoWidth > 0);
+      }, { timeout: 20000 }).then(() => true).catch(() => false);
+      check('в окне камеры идёт живая картинка', live);
+
+      await clickElement(page, '.camera__shutter');
+      const shotTaken = await waitForCount(page, '.camera__shot', 1, 15000);
+      check('кадр снимается кнопкой затвора', shotTaken);
+
+      await clickElement(page, '.camera__actions .btn--primary');
+      const cameraPhoto = await waitForCount(page, '.photo-uploader__item', 3, 40000);
+      check('снимок с камеры попал в форму', cameraPhoto,
+        (await countOf(page, '.photo-uploader__item')) + ' снимков');
+    }
+
     // Ненужный снимок убирается до сохранения.
     await clickElement(page, '.photo-uploader__remove');
-    const onePhoto = await waitForCount(page, '.photo-uploader__item', 1, 10000);
-    check('ненужный снимок убирается', onePhoto,
+    const twoLeft = await waitForCount(page, '.photo-uploader__item', 2, 10000);
+    check('ненужный снимок убирается', twoLeft,
       (await countOf(page, '.photo-uploader__item')) + ' снимков');
 
     await fillPurchase(page, {
@@ -725,8 +756,41 @@ async function main() {
     check('кабинет нового объекта открыт', openedByDefault);
 
     const cabinetLink = await page.$eval('.cabinet__link', (node) => node.value).catch(() => '');
-    check('ссылка на кабинет выдана', /page=cabinet/.test(cabinetLink),
-      cabinetLink ? cabinetLink.slice(0, 60) + '…' : '');
+    check('ссылка на кабинет ведёт на сайт и несёт только токен',
+      /^https:\/\/[^\s]+#\/c\/[A-Za-z0-9_-]+$/.test(cabinetLink) &&
+      cabinetLink.indexOf('script.google.com') === -1,
+      cabinetLink ? cabinetLink.slice(0, 70) + '…' : 'ссылки нет');
+
+    const cabinetToken = (cabinetLink.match(/#\/c\/([A-Za-z0-9_-]+)/) || [])[1] || '';
+    check('токен из короткой ссылки разбирается', Boolean(cabinetToken), cabinetToken || 'не разобран');
+
+    // Клиент открывает ссылку без входа: проверяем в отдельном профиле
+    // браузера, где нет ни сессии, ни сохранённых данных приложения.
+    const guestContext = await (browser.createBrowserContext
+      ? browser.createBrowserContext()
+      : browser.createIncognitoBrowserContext());
+    const guest = await guestContext.newPage();
+    await guest.setViewport({ width: 430, height: 932, deviceScaleFactor: 2 });
+    await guest.setCacheEnabled(false);
+    await guest.setBypassServiceWorker(true);
+
+    try {
+      await guest.goto(BASE + '#/c/' + cabinetToken, { waitUntil: 'domcontentloaded' });
+      const publicTitle = await waitFor(guest, '.public-cabinet__title', 60000);
+      check('кабинет открывается по короткой ссылке без входа', publicTitle,
+        publicTitle ? '' : 'на экране: ' + String(await textOf(guest, '.public-cabinet__body') || '').slice(0, 90));
+      check('формы входа в кабинете нет', (await countOf(guest, '.login')) === 0);
+
+      const publicTotal = await textOf(guest, '.public-cabinet__total-value');
+      check('в кабинете виден итог по смете', /₽/.test(String(publicTotal || '')), publicTotal);
+
+      // Мёртвая ссылка: несуществующий токен не должен пускать в кабинет.
+      await guest.goto(BASE + '#/c/NETTAKOGOTOKENA', { waitUntil: 'domcontentloaded' });
+      const deadTitle = await waitForText(guest, '.empty__title', 'Ссылка недоступна', 60000);
+      check('по чужому токену кабинет не открывается', deadTitle);
+    } finally {
+      await guestContext.close();
+    }
 
     // Копирование ссылки — кнопка должна ответить понятным уведомлением.
     await clickByText(page, '.cabinet__actions .btn', 'Скопировать');
@@ -743,18 +807,12 @@ async function main() {
     check('доступ клиенту закрывается', closedState,
       closedState ? '' : 'на экране: ' + String(await textOf(page, '.cabinet__state') || '').replace(/s+/g, ' ').slice(0, 100));
 
-    // Старую ссылку проверяем из Node: из браузера запрос к Apps Script
-    // упрётся в правила межсайтового доступа и ничего не докажет.
-    let deadPage = '';
-    try {
-      const response = await fetch(cabinetLink);
-      deadPage = await response.text();
-    } catch (error) {
-      deadPage = 'запрос не прошёл: ' + error.message;
-    }
+    // Старую ссылку проверяем по данным, а не по адресу: адрес ведёт на сайт,
+    // и любая его копия отдаёт одну и ту же оболочку приложения.
+    const deadCall = await callApi('cabinet.data', { token: cabinetToken });
     check('после закрытия старая ссылка не работает',
-      deadPage.indexOf('Ссылка недоступна') !== -1 || deadPage.indexOf('закрыт') !== -1,
-      deadPage.slice(0, 80));
+      deadCall.ok === false && /не найден|закрыт|недействительн/i.test(String(deadCall.error || '')),
+      deadCall.ok ? 'сервер всё ещё отдаёт данные по старому токену' : String(deadCall.error || '').slice(0, 90));
 
     // Открываем снова — токен должен смениться, прежняя ссылка остаётся мёртвой.
     await clickByText(page, '.cabinet__state .btn', 'Открыть доступ');
@@ -764,6 +822,15 @@ async function main() {
     const newCabinetLink = await page.$eval('.cabinet__link', (node) => node.value).catch(() => '');
     check('новая ссылка отличается от прежней',
       Boolean(newCabinetLink) && newCabinetLink !== cabinetLink);
+
+    // Свежий токен обязан работать: иначе закрытие кабинета ломает его насовсем.
+    const newToken = (newCabinetLink.match(/#\/c\/([A-Za-z0-9_-]+)/) || [])[1] || '';
+    const freshCall = await callApi('cabinet.data', { token: newToken });
+    const freshLabel = freshCall.ok && freshCall.data && freshCall.data.object
+      ? freshCall.data.object.numberLabel
+      : '';
+    check('по новой ссылке кабинет снова отдаёт данные', Boolean(freshLabel),
+      freshLabel || String(freshCall.error || 'нет данных'));
 
     console.log('\n=== 7. Отчёт клиенту ===');
     // window.open заменяем на запись: новые вкладки в проверке не нужны.

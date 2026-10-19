@@ -28,6 +28,7 @@ import { iconSvg } from '../../core/icons.js';
 import { fileSize } from '../../core/format.js';
 import { toastError, toastWarning } from '../../core/toast.js';
 import { CONFIG } from '../../config.js';
+import { takePhotos } from '../Camera/Camera.js';
 
 /** Форматы сжатия по убыванию предпочтения. */
 const MIME_PLAN = ['image/webp', 'image/jpeg'];
@@ -40,6 +41,18 @@ const MIN_SIDE = 640;
 
 /** Сколько фотографий помещается в одну закупку. */
 const MAX_PHOTOS = 8;
+
+/**
+ * Причина отказа камеры человеческим языком.
+ * @param {string} name — имя ошибки браузера
+ * @return {string}
+ */
+function cameraReason(name) {
+  if (name === 'NotAllowedError' || name === 'SecurityError') return 'нет разрешения';
+  if (name === 'NotFoundError' || name === 'OverconstrainedError') return 'не найдена';
+  if (name === 'NotReadableError' || name === 'AbortError') return 'занята другим приложением';
+  return 'не открылась';
+}
 
 /* --------------------------------------------------------------------------
  * Сжатие
@@ -339,7 +352,7 @@ export function createPhotoUploader(props) {
     box.appendChild(h('div.photo-uploader__buttons',
       h('button.btn.btn--ghost.btn--block', {
         type: 'button',
-        onclick: () => cameraInput.click()
+        onclick: () => shoot()
       },
         h('span.btn__icon', { html: iconSvg('camera', 18) }),
         photos.length ? 'Снять ещё' : 'Снять накладную'
@@ -361,6 +374,43 @@ export function createPhotoUploader(props) {
   }
 
   /**
+   * Съёмка через камеру устройства.
+   *
+   * Признак capture на телефоне открывает камеру, а на ноутбуке браузер его
+   * игнорирует и показывает выбор файла. Поэтому сначала пробуем настоящую
+   * камеру через getUserMedia, а если её нет или не дали доступ — отдаём
+   * обычному полю выбора файла.
+   */
+  async function shoot() {
+    if (busyCount > 0) return;
+
+    const room = maxPhotos - photos.length;
+    if (room <= 0) {
+      toastWarning('К одной закупке можно приложить не больше ' + maxPhotos + ' фото');
+      return;
+    }
+
+    const result = await takePhotos({ maxShots: room });
+
+    if (!result.supported) {
+      // Камеры нет или доступ закрыт — работаем как раньше. Человеку
+      // говорим, почему вместо съёмки открылся выбор файла.
+      if (result.error) {
+        toastWarning('Камера недоступна (' + cameraReason(result.error) + ') — выберите файл');
+      }
+      cameraInput.click();
+      return;
+    }
+
+    if (!result.shots.length) return;
+
+    takeBlobs(result.shots.map((blob, index) => ({
+      blob: blob,
+      name: 'Снимок ' + (photos.length + index + 1)
+    })));
+  }
+
+  /**
    * Обработка выбранных или снятых файлов.
    * @param {FileList} fileList
    */
@@ -372,6 +422,16 @@ export function createPhotoUploader(props) {
       }
       return true;
     });
+
+    takeBlobs(files.map((file) => ({ blob: file, name: file.name })));
+  }
+
+  /**
+   * Сжатие и добавление к списку.
+   * @param {Array<{blob: Blob, name: string}>} list
+   */
+  async function takeBlobs(list) {
+    const files = list || [];
 
     if (!files.length) return;
 
@@ -392,7 +452,7 @@ export function createPhotoUploader(props) {
     // Сжимаем по одному: так память не скачет даже на слабом телефоне.
     for (let i = 0; i < accepted.length; i++) {
       try {
-        const result = await compressImage(accepted[i], limits);
+        const result = await compressImage(accepted[i].blob, limits);
         const base64 = await toBase64(result.blob);
         if (destroyed) return;
 

@@ -1,0 +1,207 @@
+/* ==========================================================================
+   CabinetPublic.css — кабинет клиента на сайте
+   Блок: .public-cabinet
+   ========================================================================== */
+
+.public-cabinet {
+  min-height: 100vh;
+  background: var(--c-bg);
+  padding-bottom: var(--sp-6);
+}
+
+.public-cabinet__head {
+  padding: var(--sp-5) var(--sp-4) var(--sp-3);
+  text-align: center;
+}
+
+.public-cabinet__brand {
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--c-primary);
+}
+
+.public-cabinet__note {
+  margin-top: 2px;
+  font-size: 12px;
+  color: var(--c-muted);
+}
+
+.public-cabinet__body {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 0 var(--sp-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+
+.public-cabinet__hero {
+  text-align: center;
+  padding: var(--sp-2) 0 var(--sp-1);
+}
+
+.public-cabinet__num {
+  font-size: 12px;
+  color: var(--c-faint);
+  letter-spacing: 0.04em;
+}
+
+.public-cabinet__title {
+  margin-top: 4px;
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.public-cabinet__address {
+  margin-top: 4px;
+  font-size: 13px;
+  color: var(--c-muted);
+}
+
+.public-cabinet__card {
+  overflow: hidden;
+}
+
+.public-cabinet__total {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--sp-3);
+}
+
+.public-cabinet__total-label {
+  font-size: 13px;
+  color: var(--c-muted);
+}
+
+.public-cabinet__total-value {
+  font-size: 24px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.public-cabinet__lines {
+  margin-top: var(--sp-3);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.public-cabinet__line {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  font-size: 13px;
+  color: var(--c-muted);
+}
+
+.public-cabinet__line-value {
+  font-variant-numeric: tabular-nums;
+  color: var(--c-text);
+}
+
+.public-cabinet__meta {
+  margin-top: var(--sp-3);
+  padding-top: var(--sp-3);
+  border-top: 1px solid var(--c-border);
+  font-size: 12px;
+  color: var(--c-faint);
+}
+
+.public-cabinet__scroll {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.public-cabinet__table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.public-cabinet__table th {
+  text-align: left;
+  padding: 10px var(--sp-3);
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--c-faint);
+  border-bottom: 1px solid var(--c-border);
+  white-space: nowrap;
+}
+
+.public-cabinet__table td {
+  padding: 10px var(--sp-3);
+  border-bottom: 1px solid var(--c-border);
+  vertical-align: top;
+}
+
+.public-cabinet__table tr:last-child td {
+  border-bottom: none;
+}
+
+/* Числовые ячейки таблицы. Селектор привязан к таблице: тот же класс
+   стоит у номера объекта в шапке, и без привязки он уезжал вправо. */
+.public-cabinet__table .public-cabinet__num {
+  text-align: right;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.public-cabinet__sub {
+  margin-top: 2px;
+  font-size: 11px;
+  color: var(--c-faint);
+}
+
+.public-cabinet__hours,
+.public-cabinet__sum {
+  font-size: 14px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.public-cabinet__buy {
+  align-items: flex-start;
+}
+
+.public-cabinet__thumbs {
+  display: flex;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.public-cabinet__thumb {
+  display: block;
+  width: 48px;
+  height: 48px;
+  border-radius: var(--r-s);
+  overflow: hidden;
+  border: 1px solid var(--c-border);
+}
+
+.public-cabinet__thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.public-cabinet__footer {
+  margin-top: var(--sp-2);
+  text-align: center;
+  font-size: 12px;
+  color: var(--c-faint);
+}
+
+.public-cabinet__empty-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--c-faint);
+}

@@ -370,8 +370,12 @@ async function main() {
   console.log('\n=== 13. Кабинет клиента ===');
   const cabLink = await callApi('cabinet.link', { id: testObjectId }, leaderToken);
   const cabUrl = val(cabLink, 'data.url', '');
-  check('ссылка на кабинет выдана', /page=cabinet/.test(cabUrl),
+  const cabToken = val(cabLink, 'data.token', '');
+  check('ссылка на кабинет выдана', /#\/c\/[A-Za-z0-9_-]+$/.test(cabUrl),
     cabUrl ? cabUrl.slice(0, 70) + '…' : cabLink.error);
+  check('ссылка ведёт на сайт, а не на скрипт',
+    cabUrl.indexOf('script.google.com') === -1 && cabUrl.indexOf('#/c/') !== -1, cabUrl.slice(0, 70));
+  check('ссылка короткая', cabUrl.length <= 80, cabUrl.length + ' знаков');
 
   // Отдельный маршрут чтения нужен экрану управления: он не должен попадать
   // в журнал посещений как «открыл кабинет клиента».
@@ -381,29 +385,43 @@ async function main() {
     val(cabGet, 'data.url', '') === cabUrl,
     cabGet.ok ? '' : cabGet.error);
 
-  if (cabUrl) {
-    const page = await fetchPage(cabUrl);
-    check('страница кабинета открывается без входа', page.status === 200);
-    check('в кабинете есть название объекта', page.text.indexOf('ПРОВЕРКА ПРИЛОЖЕНИЯ') !== -1);
-    check('в кабинете видна закупка', page.text.indexOf('Кабель ВВГнг') !== -1);
-    // HTML на странице отдаётся в экранированном виде, поэтому ищем не разметку,
-    // а идентификатор загруженного файла: он в ответе не меняется.
+  if (cabToken) {
+    // Сайт отдаёт кабинет из браузера, поэтому содержимое проверяем по данным
+    // маршрута — он и есть источник экрана.
+    const cabData = await callApi('cabinet.data', { token: cabToken });
+    check('данные кабинета отдаются без входа', cabData.ok === true,
+      cabData.ok ? '' : cabData.error);
+    check('в кабинете есть название объекта',
+      val(cabData, 'data.object.title', '') === 'ПРОВЕРКА ПРИЛОЖЕНИЯ',
+      val(cabData, 'data.object.title', 'нет названия'));
+    check('в кабинете виден расчёт',
+      Array.isArray(val(cabData, 'data.estimate.rows', [])) &&
+      val(cabData, 'data.estimate.rows', []).length > 0);
+    check('в кабинете видны дни работы', val(cabData, 'data.days', []).length > 0);
+    check('в кабинете видны закупки', val(cabData, 'data.purchases', []).length > 0);
+    check('в кабинете видна закупка по названию',
+      JSON.stringify(val(cabData, 'data.purchases', [])).indexOf('Кабель ВВГнг') !== -1);
     check('в кабинете видна накладная с фото',
-      !!photoFileId && page.text.indexOf(photoFileId) !== -1,
+      !!photoFileId && JSON.stringify(cabData.data || {}).indexOf(photoFileId) !== -1,
       photoFileId ? '' : 'фото не загружалось');
-    check('в кабинете виден расчёт', page.text.indexOf('Расчёт стоимости работ') !== -1);
+    check('в кабинете указан срок действия', Boolean(val(cabData, 'data.validity', '')),
+      val(cabData, 'data.validity', ''));
 
     // Чужой токен не должен открывать кабинет.
-    const wrong = await fetchPage(cabUrl.replace(/token=[^&]+/, 'token=ZZZZZZZZZZ'));
-    check('неверный токен не открывает кабинет', wrong.text.indexOf('Ссылка недоступна') !== -1);
+    const wrong = await callApi('cabinet.data', { token: 'ZZZZZZZZZZ' });
+    check('неверный токен не открывает кабинет',
+      wrong.ok === false && /не найден/i.test(String(wrong.error || '')),
+      wrong.ok ? 'данные отдались' : String(wrong.error || '').slice(0, 60));
   }
 
   const cabRevoke = await callApi('cabinet.revoke', { id: testObjectId }, leaderToken);
   check('кабинет закрыт', cabRevoke.ok === true && val(cabRevoke, 'data.enabled', true) === false,
     cabRevoke.ok ? '' : cabRevoke.error);
-  if (cabUrl) {
-    const dead = await fetchPage(cabUrl);
-    check('после закрытия старая ссылка мертва', dead.text.indexOf('Ссылка недоступна') !== -1);
+  if (cabToken) {
+    const dead = await callApi('cabinet.data', { token: cabToken });
+    check('после закрытия старая ссылка мертва',
+      dead.ok === false && /закрыт|не найден/i.test(String(dead.error || '')),
+      dead.ok ? 'данные отдались' : String(dead.error || '').slice(0, 60));
   }
   await callApi('cabinet.link', { id: testObjectId }, leaderToken);
 

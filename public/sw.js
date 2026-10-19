@@ -9,7 +9,7 @@
  * ============================================================================
  */
 
-const VERSION = 'v2.5.0';
+const VERSION = 'v2.6.0';
 const CACHE_STATIC = 'be-static-' + VERSION;
 const CACHE_RUNTIME = 'be-runtime-' + VERSION;
 

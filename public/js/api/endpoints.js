@@ -106,6 +106,8 @@ export const api = {
   /* --- Кабинет клиента --- */
 
   cabinetGet: (id) => request('cabinet.get', { id: id }),
+  // Кабинет клиента по короткой ссылке: пропуск — сам токен.
+  cabinetData: (token) => request('cabinet.data', { token: token }),
   cabinetLink: (id) => request('cabinet.link', { id: id }),
   cabinetRevoke: (id) => request('cabinet.revoke', { id: id }),
   cabinetExpire: () => request('cabinet.expire'),

@@ -32,6 +32,7 @@ import { createArchive } from './components/Archive/Archive.js';
 import { createBrigade } from './components/Brigade/Brigade.js';
 import { createVisits } from './components/Visits/Visits.js';
 import { createPrices } from './components/Prices/Prices.js';
+import { createCabinetPublic, cabinetTokenFromHash, isCabinetHash } from './components/CabinetPublic/CabinetPublic.js';
 import { CONFIG } from './config.js';
 
 const root = qs('#app');
@@ -62,6 +63,18 @@ async function start() {
     log.warn('Очередь отправки не запустилась', error.message);
   });
 
+  // Ссылку клиента могут вставить в уже открытую вкладку: тогда адрес
+  // меняется без перезагрузки, и кабинет надо показать сами.
+  window.addEventListener('hashchange', () => {
+    if (isCabinetHash()) mountPublicCabinet(cabinetTokenFromHash());
+  });
+
+  // Короткая ссылка клиента: сразу кабинет, вход не нужен.
+  if (isCabinetHash()) {
+    mountPublicCabinet(cabinetTokenFromHash());
+    return;
+  }
+
   const session = loadSession();
   if (session) {
     // Пакет данных поднимаем из памяти устройства ещё до первого экрана:
@@ -78,6 +91,18 @@ async function start() {
  * ------------------------------------------------------------------------ */
 
 /** Показать экран входа. */
+/**
+ * Кабинет клиента по короткой ссылке — открывается без входа.
+ * Токен из адреса и есть пропуск, поэтому экран живёт отдельно от каркаса.
+ */
+function mountPublicCabinet(token) {
+  if (shell && typeof shell.destroy === 'function') shell.destroy();
+  shell = null;
+
+  const screen = createCabinetPublic({ token: token });
+  setContent(root, screen.el);
+}
+
 function mountLogin() {
   if (shell && typeof shell.destroy === 'function') shell.destroy();
   shell = null;
