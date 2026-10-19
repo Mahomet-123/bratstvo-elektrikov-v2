@@ -38,6 +38,12 @@ function reportData_(object) {
   const hours = round2_(days.reduce(function (acc, d) { return acc + num_(d.hours, 0); }, 0));
   const purchasesSum = round2_(purchases.reduce(function (acc, p) { return acc + num_(p.sum, 0); }, 0));
 
+  // Клиент платит за материалы с наценкой: без неё итог в отчёте был меньше,
+  // чем в приложении. Считаем от суммы строк листа, а не от колонки реестра.
+  const markup = markupOf_(object, purchasesSum);
+  const materials = round2_(purchasesSum + markup);
+  const estimateTotal = round2_(num_(estimate.total, 0));
+
   return {
     object: view,
     estimate: estimate,
@@ -45,7 +51,13 @@ function reportData_(object) {
     purchases: purchases,
     totals: {
       hours: hours,
+      // purchases — «голые» закупки, materials — они же с наценкой.
       purchases: purchasesSum,
+      markup: markup,
+      materials: materials,
+      estimate: estimateTotal,
+      // Столько клиент платит всего: работы по смете + материалы с наценкой.
+      grand: round2_(estimateTotal + materials),
       positions: estimate.positions
     },
     generated: nowIso_()
@@ -56,16 +68,31 @@ function reportData_(object) {
  * Ссылка на отчёт по объекту.
  * @param {string} token
  * @param {string} id
- * @return {Object} { url, cabinetUrl }
+ * @return {Object} { url, cabinetUrl, token }
  */
 function reportLink_(token, id) {
   requireSession_(token);
   const object = requireObject_(id);
   return {
-    url: cabinetBaseUrl_() + '?page=report&id=' + encodeURIComponent(str_(object['id'])) +
-      '&token=' + encodeURIComponent(str_(object['токен'])),
-    cabinetUrl: cabinetUrl_(object)
+    // Отчёт открывается на сайте так же, как кабинет: короткий адрес с токеном.
+    url: reportUrl_(object),
+    cabinetUrl: cabinetUrl_(object),
+    token: str_(object['токен'])
   };
+}
+
+/**
+ * Данные страницы отчёта для сайта — без входа, по одному токену.
+ * Набор тот же, что у кабинета: отчёт и кабинет показывают одни и те же
+ * смету, дни и закупки, разница только в заголовке экрана.
+ * @param {string} token
+ * @return {Object}
+ */
+function reportPublicData_(token) {
+  const object = cabinetRequireByToken_(token);
+  const data = reportData_(object);
+  data.validity = cabinetValidityText_(object);
+  return data;
 }
 
 /* --------------------------------------------------------------------------
@@ -102,6 +129,7 @@ function applySheetStyle_(range, style) {
   range.setFontColor(style.color || '#16202e');
   if (style.bg) range.setBackground(style.bg);
   range.setVerticalAlignment('middle');
+  if (style.align) range.setHorizontalAlignment(style.align);
   if (style.wrap) range.setWrap(true);
   if (style.border) {
     range.setBorder(null, null, true, null, null, null, style.border, SpreadsheetApp.BorderStyle.SOLID);
@@ -124,7 +152,11 @@ function sheetPut_(sh, row, values, style, spans) {
   values.forEach(function (value, index) {
     const span = widths[index] || 1;
     const range = sh.getRange(row, col, 1, span);
-    range.setValue(value === undefined || value === null ? '' : value);
+    const text = value === undefined || value === null ? '' : value;
+
+    // Текст, начинающийся с «=», «+», «-» или «@», Google принимает
+    // за формулу и пишет #ERROR! — записываем через общий помощник.
+    range.setValue(cellValue_(text));
     applySheetStyle_(range, style);
     if (span > 1) range.merge();
     col += span;
@@ -179,6 +211,9 @@ function fillReportSheet_(sh, data) {
 
   /* --- Реквизиты --- */
   row = sheetPut_(sh, row, ['ОБЪЕКТ'], REPORT_STYLE_.section, full);
+  // Реквизиты выравниваем по левому краю: даты и суммы Google иначе
+  // прижимает вправо, и строки выглядят рвано.
+  const cellLeft = Object.assign({}, REPORT_STYLE_.cell, { align: 'left' });
   [
     ['Клиент', view.client || '—'],
     ['Адрес', view.address || '—'],
@@ -188,7 +223,7 @@ function fillReportSheet_(sh, data) {
     ['Начат', htmlDate_(view.created)],
     ['Закрыт', view.closed ? htmlDate_(view.closed) : '—']
   ].forEach(function (pair) {
-    row = sheetPut_(sh, row, [pair[0], pair[1]], REPORT_STYLE_.cell, [2, 5]);
+    row = sheetPut_(sh, row, [pair[0], pair[1]], cellLeft, [2, 5]);
   });
   row = sheetPut_(sh, row, [''], REPORT_STYLE_.gap, full);
 
@@ -277,9 +312,26 @@ function fillReportSheet_(sh, data) {
 
     row = sheetPut_(sh, row, ['Всего закуплено', sheetMoney_(data.totals.purchases)],
       REPORT_STYLE_.total, [6, 1]);
+    if (data.totals.markup > 0) {
+      row = sheetPut_(sh, row, ['Наценка на материал', sheetMoney_(data.totals.markup)],
+        REPORT_STYLE_.total, [6, 1]);
+      row = sheetPut_(sh, row, ['Итого за материалы', sheetMoney_(data.totals.materials)],
+        REPORT_STYLE_.total, [6, 1]);
+    }
   } else {
     row = sheetPut_(sh, row, ['Закупки не зафиксированы.'], REPORT_STYLE_.cell, full);
   }
+
+  row = sheetPut_(sh, row, [''], REPORT_STYLE_.gap, full);
+
+  /* --- Итоги для клиента --- */
+  row = sheetPut_(sh, row, ['ИТОГИ'], REPORT_STYLE_.section, full);
+  row = sheetPut_(sh, row, ['Итого по смете', sheetMoney_(data.totals.estimate)],
+    REPORT_STYLE_.total, [6, 1]);
+  row = sheetPut_(sh, row, ['Итого за материалы (с наценкой)', sheetMoney_(data.totals.materials)],
+    REPORT_STYLE_.total, [6, 1]);
+  row = sheetPut_(sh, row, ['ВСЕГО К ОПЛАТЕ', sheetMoney_(data.totals.grand)],
+    REPORT_STYLE_.head, [6, 1]);
 
   row = sheetPut_(sh, row, [''], REPORT_STYLE_.gap, full);
   row = sheetPut_(sh, row,
@@ -294,9 +346,11 @@ function fillReportSheet_(sh, data) {
 /**
  * Сборка PDF-отчёта: временная таблица → экспорт в PDF → файл на Диске.
  * @param {Object} object
- * @return {Object} { fileId, url, name, size }
+ * @param {boolean=} wantBytes — вернуть и содержимое файла (для скачивания
+ *                              прямо в приложении, без похода на Диск)
+ * @return {Object} { fileId, url, name, size, mime?, base64? }
  */
-function buildReportPdf_(object) {
+function buildReportPdf_(object, wantBytes) {
   const data = reportData_(object);
   const view = data.object;
   const baseName = 'Отчёт ' + view.numberLabel + ' ' + (view.title || 'объект') + ' ' + todayIso_();
@@ -310,6 +364,8 @@ function buildReportPdf_(object) {
   SpreadsheetApp.flush();
 
   const pdfBlob = DriveApp.getFileById(tmpId).getAs(MimeType.PDF);
+  // Содержимое снимаем до уборки временной таблицы: дальше оно не нужно.
+  const bytes = wantBytes ? pdfBlob.getBytes() : null;
   const saved = saveBlobToFolder_(reportFolder_(), baseName + '.pdf', pdfBlob);
 
   // Временную таблицу убираем в корзину — она больше не нужна.
@@ -319,7 +375,34 @@ function buildReportPdf_(object) {
     // Не критично: лишний файл в корзине не мешает.
   }
 
-  return { fileId: saved.id, url: saved.url, name: saved.name, size: saved.size };
+  const result = {
+    fileId: saved.id,
+    url: saved.url,
+    name: saved.name,
+    size: saved.size,
+    // Итоги отдаём вместе с файлом: письмо и экран берут их отсюда,
+    // чтобы не перечитывать лист объекта второй раз.
+    totals: data.totals
+  };
+  if (bytes) {
+    result.mime = 'application/pdf';
+    result.base64 = Utilities.base64Encode(bytes);
+  }
+  return result;
+}
+
+/**
+ * PDF для скачивания из приложения: файл приходит целиком, а не ссылкой
+ * на Диск. На телефоне ссылка на Диск открывала просмотрщик вместо
+ * сохранения файла.
+ * @param {string} token
+ * @param {string} id
+ * @return {Object} { name, size, mime, base64, url }
+ */
+function reportPdf_(token, id) {
+  requireSession_(token);
+  const object = requireObject_(id);
+  return buildReportPdf_(object, true);
 }
 
 /**
@@ -342,14 +425,18 @@ function reportSend_(token, id, contact) {
   const link = cabinetUrl_(object);
 
   const subject = 'Отчёт по объекту № ' + view.numberLabel + ' — ' + (view.title || 'объект');
+  const totals = pdf.totals || {};
   const text = [
     'Здравствуйте!',
     '',
     'Направляем отчёт по объекту «' + (view.title || '') + '».',
     view.address ? 'Адрес: ' + view.address : '',
     '',
-    'Итог по расчёту: ' + sheetMoney_(view.totals.estimate),
-    'Закуплено материалов: ' + sheetMoney_(view.totals.purchases),
+    'Итого по смете: ' + sheetMoney_(totals.estimate),
+    'Материалы: ' + sheetMoney_(totals.purchases),
+    (totals.markup > 0 ? 'Наценка на материал: ' + sheetMoney_(totals.markup) : ''),
+    (totals.markup > 0 ? 'Итого за материалы: ' + sheetMoney_(totals.materials) : ''),
+    'Всего к оплате: ' + sheetMoney_(totals.grand),
     '',
     'Открыть кабинет с полной историей работ:',
     link,

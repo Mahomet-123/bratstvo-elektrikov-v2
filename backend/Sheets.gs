@@ -159,6 +159,22 @@ function findRow_(name, predicate) {
  * ------------------------------------------------------------------------ */
 
 /**
+ * Значение для записи в ячейку.
+ *
+ * Google считает формулой текст, начинающийся с «=», «+», «-» или «@».
+ * Телефон «+7 900…» из-за этого превращался в #ERROR! прямо при создании
+ * объекта — и терялся навсегда. Апостроф в начале говорит таблице «это
+ * текст», в самой ячейке он не остаётся.
+ * @param {*} value
+ * @return {*}
+ */
+function cellValue_(value) {
+  if (value === undefined || value === null) return '';
+  if (typeof value === 'string' && /^[=+\-@]/.test(value)) return "'" + value;
+  return value;
+}
+
+/**
  * Преобразование объекта в массив значений по заголовку листа.
  * @param {Array<string>} header
  * @param {Object} obj
@@ -166,8 +182,7 @@ function findRow_(name, predicate) {
  */
 function toRowValues_(header, obj) {
   return header.map(function (key) {
-    const v = obj ? obj[key] : '';
-    return v === undefined || v === null ? '' : v;
+    return cellValue_(obj ? obj[key] : '');
   });
 }
 
@@ -216,7 +231,9 @@ function updateRow_(name, rowNumber, patch) {
   const keys = sh.getRange(1, 1, 1, cols).getValues()[0].map(str_);
   const current = sh.getRange(rowNumber, 1, 1, cols).getValues()[0];
   const next = keys.map(function (key, i) {
-    return Object.prototype.hasOwnProperty.call(patch, key) ? patch[key] : current[i];
+    return Object.prototype.hasOwnProperty.call(patch, key)
+      ? cellValue_(patch[key])
+      : current[i];
   });
   sh.getRange(rowNumber, 1, 1, cols).setValues([next]);
   return true;

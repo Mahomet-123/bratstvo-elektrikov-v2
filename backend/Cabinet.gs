@@ -38,6 +38,18 @@ function cabinetUrl_(object) {
 }
 
 /**
+ * Ссылка на страницу отчёта — тоже на сайте и тоже без номера объекта.
+ * Токен тот же, что у кабинета: закрыли доступ — погасли обе ссылки.
+ * @param {Object} object — строка листа «Объекты»
+ * @return {string}
+ */
+function reportUrl_(object) {
+  const token = str_(object['токен']);
+  if (!token) return '';
+  return str_(CONFIG.SITE_URL) + '#/r/' + encodeURIComponent(token);
+}
+
+/**
  * Текст о сроке действия кабинета — показывается клиенту в подвале страницы.
  * @param {Object} object
  * @return {string}

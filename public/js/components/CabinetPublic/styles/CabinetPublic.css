@@ -65,6 +65,22 @@
   overflow: hidden;
 }
 
+/* Итоги: смета, материалы и общая сумма — тремя карточками подряд. */
+.public-cabinet__money {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+
+/* Общая сумма к оплате — заметнее остальных итогов. */
+.public-cabinet__grand {
+  border: 1px solid var(--c-primary);
+}
+
+.public-cabinet__grand .public-cabinet__total-value {
+  color: var(--c-primary);
+}
+
 .public-cabinet__total {
   display: flex;
   align-items: baseline;

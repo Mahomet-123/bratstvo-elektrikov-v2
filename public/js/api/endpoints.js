@@ -102,6 +102,8 @@ export const api = {
   reportLink: (id) => request('report.link', { id: id }),
   reportPdf: (id) => request('report.pdf', { id: id }, { timeout: 120000 }),
   reportSend: (id, contact) => request('report.send', { id: id, contact: contact }, { timeout: 120000 }),
+  // Страница отчёта на сайте: без входа, пропуск — токен объекта.
+  reportData: (token) => request('report.data', { token: token }),
 
   /* --- Кабинет клиента --- */
 

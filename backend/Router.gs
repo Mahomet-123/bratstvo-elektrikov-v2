@@ -419,9 +419,16 @@ const ROUTES_ = {
   'report.pdf': {
     auth: 'user',
     handler: function (ctx) {
-      requireSession_(ctx.token);
-      const object = requireObject_((ctx.payload || {}).id);
-      return buildReportPdf_(object);
+      const p = ctx.payload || {};
+      return reportPdf_(ctx.token, p.id);
+    }
+  },
+
+  // Страница отчёта на сайте: без входа, только по токену объекта.
+  'report.data': {
+    auth: 'none',
+    handler: function (ctx) {
+      return reportPublicData_((ctx.payload || {}).token);
     }
   },
 

@@ -802,6 +802,22 @@ async function main() {
       const publicTotal = await textOf(guest, '.public-cabinet__total-value');
       check('в кабинете виден итог по смете', /₽/.test(String(publicTotal || '')), publicTotal);
 
+      // Та же страница по адресу отчёта: #/r/ТОКЕН.
+      await guest.goto(BASE + '#/r/' + cabinetToken, { waitUntil: 'domcontentloaded' });
+      const reportTitle = await waitFor(guest, '.public-cabinet__title', 60000);
+      check('страница отчёта открывается без входа', reportTitle);
+
+      const reportNote = await textOf(guest, '.public-cabinet__note');
+      check('у страницы отчёта свой заголовок', /Отчёт/i.test(String(reportNote || '')), reportNote);
+
+      const moneyLabels = await guest.$$eval('.public-cabinet__total-label',
+        (nodes) => nodes.map((n) => n.textContent.trim()));
+      check('в отчёте смета и материалы посчитаны отдельно',
+        moneyLabels.some((t) => /по смете/i.test(t)) && moneyLabels.some((t) => /за материалы/i.test(t)),
+        moneyLabels.join(' | '));
+      check('в отчёте есть общая сумма к оплате',
+        moneyLabels.some((t) => /Всего к оплате/i.test(t)), moneyLabels.join(' | '));
+
       // Мёртвая ссылка: несуществующий токен не должен пускать в кабинет.
       await guest.goto(BASE + '#/c/NETTAKOGOTOKENA', { waitUntil: 'domcontentloaded' });
       const deadTitle = await waitForText(guest, '.empty__title', 'Ссылка недоступна', 60000);
@@ -865,17 +881,50 @@ async function main() {
     const linksShown = await waitFor(page, '.report__links', 20000);
     check('ссылки для клиента доступны (кабинет открыт)', linksShown);
 
+    // Ссылка на отчёт тоже ведёт на сайт и тоже короткая.
+    const reportLinkValue = await page.$$eval('.report__link',
+      (nodes) => nodes.map((n) => n.value));
+    check('ссылка на страницу отчёта ведёт на сайт',
+      /#\/r\/[A-Za-z0-9_-]+$/.test(String(reportLinkValue[1] || '')),
+      String(reportLinkValue[1] || 'нет ссылки').slice(0, 70));
+
+    // Скачивание проверяем по-настоящему: Chrome складывает файл в папку,
+    // и мы смотрим, что это PDF, а не открытая вкладка с Google Диском.
+    const downloadDir = path.join(tmpDir, 'downloads');
+    fs.mkdirSync(downloadDir, { recursive: true });
+    const cdp = await page.createCDPSession();
+    await cdp.send('Browser.setDownloadBehavior', {
+      behavior: 'allow',
+      downloadPath: downloadDir,
+      eventsEnabled: true
+    });
+
     await clickByText(page, '.report__actions .row', 'Скачать PDF');
-    const pdfToast = await waitForText(page, '.toast', 'PDF готов', 120000);
+    const pdfToast = await waitForText(page, '.toast', 'PDF сохранён', 120000);
     check('PDF-отчёт собран на сервере', pdfToast);
 
+    let pdfFile = '';
+    const downloadStarted = Date.now();
+    while (Date.now() - downloadStarted < 60000) {
+      const files = fs.readdirSync(downloadDir).filter((name) => /\.pdf$/i.test(name));
+      if (files.length) {
+        pdfFile = path.join(downloadDir, files[0]);
+        break;
+      }
+      await sleep(300);
+    }
+    const pdfSize = pdfFile ? fs.statSync(pdfFile).size : 0;
+    check('файл PDF сохраняется на устройство', pdfSize > 20000,
+      pdfFile ? path.basename(pdfFile) + ', ' + Math.round(pdfSize / 1024) + ' КБ' : 'файла в загрузках нет');
+
     const openedUrls = await page.evaluate(() => window.__opened || []);
-    check('ссылка на PDF открывается', openedUrls.some((url) => /drive\.google\.com/.test(url)),
-      openedUrls.length ? String(openedUrls[0]).slice(0, 60) : 'ничего не открывалось');
+    check('при скачивании не открывается Google Диск',
+      !openedUrls.some((url) => /drive\.google\.com/.test(url)),
+      openedUrls.length ? String(openedUrls[0]).slice(0, 60) : 'вкладок не открывалось');
 
     await clickByText(page, '.report__actions .row', 'Показать веб-отчёт');
-    const reportOpened = await page.evaluate(() => (window.__opened || []).some((url) => /page=report/.test(url)));
-    check('веб-отчёт клиента открывается', reportOpened);
+    const reportOpened = await page.evaluate(() => (window.__opened || []).some((url) => /#\/r\//.test(url)));
+    check('веб-отчёт клиента открывается на сайте', reportOpened);
 
     console.log('\n=== 8. Работа без сети (офлайн-очередь) ===');
     await page.goto(BASE + '#/object/' + objectId + '/purchases', { waitUntil: 'domcontentloaded' });

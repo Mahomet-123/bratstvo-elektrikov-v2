@@ -119,6 +119,7 @@ const BROWSER_GLOBALS = new Set([
   'console', 'window', 'document', 'navigator', 'location', 'localStorage', 'sessionStorage',
   'indexedDB', 'fetch', 'URL', 'Blob', 'File', 'FileReader', 'FormData', 'Headers', 'Request',
   'Response', 'Image', 'ImageBitmap', 'createImageBitmap', 'OffscreenCanvas',
+  'Uint8Array', 'Uint8ClampedArray', 'Int8Array', 'ArrayBuffer', 'DataView',
   'setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'requestAnimationFrame',
   'cancelAnimationFrame', 'queueMicrotask', 'structuredClone',
   'Object', 'Array', 'String', 'Number', 'Boolean', 'Symbol', 'BigInt', 'Date', 'RegExp',

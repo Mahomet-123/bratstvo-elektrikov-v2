@@ -1,9 +1,10 @@
 /**
  * ============================================================================
  * Компонент: CabinetPublic
- * Ответственность: кабинет клиента на сайте приложения — открывается по
- *                  короткой ссылке вида …/#/c/ТОКЕН, без входа в приложение.
- *                  Только просмотр: смета, часы по дням, закупки с фото.
+ * Ответственность: страницы для клиента на сайте приложения, без входа:
+ *                  кабинет объекта (…/#/c/ТОКЕН) и отчёт (…/#/r/ТОКЕН).
+ *                  Только просмотр: смета, часы по дням, закупки с фото,
+ *                  итоги — по смете, за материалы и всего к оплате.
  *
  *                  Токен в адресе и есть пропуск: он уникален для объекта,
  *                  и при закрытии доступа перестаёт работать.
@@ -21,34 +22,34 @@ import { api } from '../../api/endpoints.js';
 /** Признак токена кабинета: буквы, цифры, дефис и подчёркивание. */
 const TOKEN_SHAPE = /^[A-Za-z0-9_-]{4,64}$/;
 
-/**
- * Адрес ведёт в кабинет клиента? Проверяем по началу адреса, а не по токену:
- * иначе битая ссылка (#/c/ или #/c/кириллица) выглядела бы как обычный вход
- * в приложение, и человек не понял бы, что ссылка не та.
- * @param {string=} hash
- * @return {boolean}
- */
-export function isCabinetHash(hash) {
-  const raw = String(hash === undefined ? window.location.hash : hash);
-  return raw.indexOf('#/c/') === 0;
-}
+/** Заголовки страниц: кабинет и отчёт показывают одни данные, но по-разному называются. */
+const PAGE_TITLES = {
+  cabinet: 'Кабинет клиента',
+  report: 'Отчёт по объекту'
+};
 
 /**
- * Токен кабинета из адреса: #/c/ТОКЕН.
+ * Разбор адреса клиентской страницы: #/c/ТОКЕН или #/r/ТОКЕН.
+ * Смотрим на начало адреса, а не на токен: иначе битая ссылка (#/c/ или
+ * #/c/кириллица) выглядела бы как обычный вход в приложение, и человек
+ * не понял бы, что ссылка не та.
  * @param {string=} hash
- * @return {string}
+ * @return {{kind: string, token: string}|null}
  */
-export function cabinetTokenFromHash(hash) {
+export function publicRouteFromHash(hash) {
   const raw = String(hash === undefined ? window.location.hash : hash);
-  const match = raw.match(/^#\/c\/([^/?#]*)/);
-  if (!match) return '';
+  const match = raw.match(/^#\/(c|r)\/([^/?#]*)/);
+  if (!match) return null;
 
+  let token = match[2];
   try {
-    return decodeURIComponent(match[1]);
+    token = decodeURIComponent(token);
   } catch (e) {
-    // Битая последовательность вида %E0 — считаем ссылку негодной.
-    return match[1];
+    // Битая последовательность вида %E0 — оставляем как есть, дальше
+    // страница сама скажет, что ссылка искажена.
   }
+
+  return { kind: match[1] === 'r' ? 'report' : 'cabinet', token: token };
 }
 
 /** Ссылка на миниатюру файла на Диске. */
@@ -74,21 +75,23 @@ function closedReason(error) {
 }
 
 /**
- * Создание кабинета клиента.
+ * Создание клиентской страницы: кабинет или отчёт.
  * @param {Object} props
  * @param {string} props.token
+ * @param {string=} props.mode — 'cabinet' (по умолчанию) или 'report'
  * @return {Object} { el, destroy }
  */
 export function createCabinetPublic(props) {
   const options = props || {};
   const token = options.token || '';
+  const mode = options.mode === 'report' ? 'report' : 'cabinet';
 
   const bodyBox = h('div.public-cabinet__body');
 
   const el = h('div.public-cabinet',
     h('div.public-cabinet__head',
       h('div.public-cabinet__brand', { text: 'Братство Электриков' }),
-      h('div.public-cabinet__note', { text: 'Кабинет клиента' })
+      h('div.public-cabinet__note', { text: PAGE_TITLES[mode] })
     ),
     bodyBox
   );
@@ -103,34 +106,67 @@ export function createCabinetPublic(props) {
     ));
   }
 
-  /** Сводка по смете. */
+  /** Строка «подпись — сумма» внутри карточки итогов. */
+  function moneyLine(label, value) {
+    return h('div.public-cabinet__line',
+      h('span', { text: label }),
+      h('span.public-cabinet__line-value', { text: value })
+    );
+  }
+
+  /**
+   * Итоги для клиента: смета и материалы — разными блоками, потому что это
+   * разные деньги, и в конце общая сумма к оплате. Материалы считаются
+   * с наценкой: клиент платит именно её, а не закупочную стоимость.
+   */
   function renderTotals(estimate, totals) {
-    const lines = [
-      ['Работы (подытог)', money(estimate.subtotal || 0)],
-      (estimate.supply || 0) > 0 ? ['Снабжение материалом', money(estimate.supply)] : null,
-      (estimate.commissioning || 0) > 0 ? ['Пусконаладка', money(estimate.commissioning)] : null,
-      (estimate.discount || 0) > 0 ? ['Скидка', '−' + money(estimate.discount)] : null
+    const worksLines = [
+      moneyLine('Работы (подытог)', money(estimate.subtotal || 0)),
+      (estimate.supply || 0) > 0 ? moneyLine('Снабжение материалом', money(estimate.supply)) : null,
+      (estimate.commissioning || 0) > 0 ? moneyLine('Пусконаладка', money(estimate.commissioning)) : null,
+      (estimate.discount || 0) > 0 ? moneyLine('Скидка', '−' + money(estimate.discount)) : null
     ].filter(Boolean);
 
-    return h('div.card.public-cabinet__card',
-      h('div.card__body',
-        h('div.public-cabinet__total',
-          h('span.public-cabinet__total-label', { text: 'Итого по смете' }),
-          h('span.public-cabinet__total-value', { text: money(estimate.total || 0) })
-        ),
-        h('div.public-cabinet__lines',
-          lines.map((line) => h('div.public-cabinet__line',
-            h('span', { text: line[0] }),
-            h('span.public-cabinet__line-value', { text: line[1] })
-          ))
-        ),
-        h('div.public-cabinet__meta', {
-          text: [
-            countLabel(totals.positions || 0, ['позиция', 'позиции', 'позиций']) + ' в смете',
-            hours(totals.hours || 0) + ' работ',
-            money(totals.purchases || 0) + ' материалов'
-          ].join(' · ')
-        })
+    const materialLines = [
+      moneyLine('Материалы по накладным', money(totals.purchases || 0)),
+      (totals.markup || 0) > 0 ? moneyLine('Наценка на материал', money(totals.markup)) : null
+    ].filter(Boolean);
+
+    return h('div.public-cabinet__money',
+      h('div.card.public-cabinet__card',
+        h('div.card__body',
+          h('div.public-cabinet__total',
+            h('span.public-cabinet__total-label', { text: 'Итого по смете' }),
+            h('span.public-cabinet__total-value', { text: money(estimate.total || 0) })
+          ),
+          h('div.public-cabinet__lines', worksLines),
+          h('div.public-cabinet__meta', {
+            text: [
+              countLabel(totals.positions || 0, ['позиция', 'позиции', 'позиций']) + ' в смете',
+              hours(totals.hours || 0) + ' работ'
+            ].join(' · ')
+          })
+        )
+      ),
+      h('div.card.public-cabinet__card',
+        h('div.card__body',
+          h('div.public-cabinet__total',
+            h('span.public-cabinet__total-label', { text: 'Итого за материалы' }),
+            h('span.public-cabinet__total-value', { text: money(totals.materials || 0) })
+          ),
+          h('div.public-cabinet__lines', materialLines)
+        )
+      ),
+      h('div.card.public-cabinet__card.public-cabinet__grand',
+        h('div.card__body',
+          h('div.public-cabinet__total',
+            h('span.public-cabinet__total-label', { text: 'Всего к оплате' }),
+            h('span.public-cabinet__total-value', { text: money(totals.grand || 0) })
+          ),
+          h('div.public-cabinet__meta', {
+            text: 'Работы по смете и материалы с наценкой'
+          })
+        )
       )
     );
   }
@@ -261,14 +297,18 @@ export function createCabinetPublic(props) {
     }));
   }
 
-  /** Загрузка данных кабинета. */
+  /** Загрузка данных страницы. */
   async function load() {
     setContent(bodyBox,
-      h('div.loading-block', h('div.spinner'), h('div', { text: 'Открываем кабинет…' }))
+      h('div.loading-block', h('div.spinner'), h('div', {
+        text: mode === 'report' ? 'Готовим отчёт…' : 'Открываем кабинет…'
+      }))
     );
 
     try {
-      const data = await api.cabinetData(token);
+      const data = mode === 'report'
+        ? await api.reportData(token)
+        : await api.cabinetData(token);
       render(data);
     } catch (error) {
       renderClosed(closedReason(error));

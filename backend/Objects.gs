@@ -158,16 +158,28 @@ function findObjectByNumber_(number) {
 }
 
 /**
- * Представление объекта для клиента.
- * @param {Object} object — строка листа «Объекты»
- * @param {boolean=} withTotals — добавить пересчитанные итоги
- * @return {Object}
+ * Наценка на материал от указанной суммы закупок.
+ * Правило одно на всё приложение: CONFIG.MARKUP_PERCENT, но не меньше
+ * CONFIG.MARKUP_MIN. В отчёте сумма закупок берётся из листа объекта,
+ * а не из колонки реестра — так наценка не разойдётся с показанными строками.
+ * @param {Object} object
+ * @param {number} base — сумма закупок
+ * @return {number}
  */
-function markupSumOf_(object) {
+function markupOf_(object, base) {
   if (!bool_(object['наценка'])) return 0;
-  const purchases = round2_(num_(object['итог закупок'], 0));
+  const purchases = round2_(num_(base, 0));
   if (!(purchases > 0)) return 0;
   return round2_(Math.max(purchases * CONFIG.MARKUP_PERCENT / 100, CONFIG.MARKUP_MIN));
+}
+
+/**
+ * Наценка на материал по данным реестра объектов.
+ * @param {Object} object
+ * @return {number}
+ */
+function markupSumOf_(object) {
+  return markupOf_(object, object['итог закупок']);
 }
 
 /**
@@ -197,6 +209,12 @@ function setObjectMarkup_(token, id, on) {
   });
 }
 
+/**
+ * Представление объекта для клиента.
+ * @param {Object} object — строка листа «Объекты»
+ * @param {boolean=} withTotals — добавить пересчитанные итоги
+ * @return {Object}
+ */
 function objectView_(object, withTotals) {
   const number = int_(object['номер'], 0);
   const view = {

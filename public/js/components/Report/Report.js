@@ -7,7 +7,7 @@
  *                  поэтому его подготовка занимает несколько секунд —
  *                  кнопки на это время блокируются.
  * Зависимости: core/dom, core/styles, core/toast, core/modal, core/format,
- *              core/clipboard, api/*, components/common/badges
+ *              core/clipboard, core/files, api/*, components/common/badges
  * ============================================================================
  */
 
@@ -15,10 +15,11 @@ import { h, clear } from '../../core/dom.js';
 import { loadStyles } from '../../core/styles.js';
 import { iconSvg } from '../../core/icons.js';
 import { toastSuccess, toastError, toastWarning } from '../../core/toast.js';
-import { promptDialog } from '../../core/modal.js';
+import { confirmDialog, promptDialog } from '../../core/modal.js';
 import { describeError } from '../../api/apiClient.js';
 import { api } from '../../api/endpoints.js';
 import { copyText } from '../../core/clipboard.js';
+import { base64ToBlob, saveFile, isTouchDevice } from '../../core/files.js';
 import { moneyShort, hours, fileSize, dateShort } from '../../core/format.js';
 import { statusBadge } from '../common/badges.js';
 
@@ -118,7 +119,7 @@ export function createReport(props) {
       h('div.card__head', h('div.card__title', { text: 'Что отправить клиенту' })),
       h('div.card__body',
         actionRow('download', 'Скачать PDF',
-          busy === 'pdf' ? 'Собираем файл…' : 'Готовый документ с расчётом, днями и закупками',
+          busy === 'pdf' ? 'Собираем файл…' : 'Файл сохранится на устройство — без Диска и лишних вкладок',
           () => buildPdf(),
           busy === 'pdf'),
         actionRow('phone', 'Отправить письмом',
@@ -252,7 +253,15 @@ export function createReport(props) {
     }
   }
 
-  /** Сборка PDF и открытие файла. */
+  /**
+   * Сборка PDF и сохранение файла на устройство.
+   *
+   * Файл приходит целиком, а не ссылкой на Диск: ссылка на телефоне
+   * открывала просмотрщик вместо сохранения. На компьютере браузер просто
+   * скачивает файл, на телефоне показываем окно с готовым файлом — нажатие
+   * на его кнопку браузер считает действием человека и отдаёт системное
+   * «Поделиться» (оттуда файл кладут в «Файлы»).
+   */
   async function buildPdf() {
     if (busy) return;
     busy = 'pdf';
@@ -260,9 +269,33 @@ export function createReport(props) {
 
     try {
       const result = await api.reportPdf(id);
-      toastSuccess('PDF готов: ' + fileSize(result.size || 0));
-      if (result.url) window.open(result.url, '_blank', 'noopener');
-      else toastWarning('Файл собран, но ссылку открыть не удалось — найдите его на Google Диске');
+
+      if (!result.base64) {
+        // Ответ без содержимого — остаётся только ссылка на Диск.
+        if (result.url) window.open(result.url, '_blank', 'noopener');
+        toastWarning('Файл собран, но пришёл без содержимого — откройте его на Диске');
+        return;
+      }
+
+      const blob = base64ToBlob(result.base64, result.mime || 'application/pdf');
+      const name = result.name || 'Отчёт.pdf';
+
+      if (isTouchDevice()) {
+        const save = await confirmDialog({
+          title: 'PDF готов',
+          text: name + ' · ' + fileSize(blob.size) + '. Сохраните файл на телефон.',
+          confirmText: 'Сохранить файл',
+          cancelText: 'Закрыть'
+        });
+        if (save) {
+          const outcome = await saveFile(blob, name, { share: true });
+          if (outcome !== 'cancel') toastSuccess('PDF сохранён: ' + fileSize(blob.size));
+        }
+        return;
+      }
+
+      await saveFile(blob, name);
+      toastSuccess('PDF сохранён: ' + fileSize(blob.size));
     } catch (error) {
       toastError(describeError(error));
     } finally {

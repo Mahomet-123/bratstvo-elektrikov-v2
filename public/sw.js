@@ -9,7 +9,7 @@
  * ============================================================================
  */
 
-const VERSION = 'v2.6.0';
+const VERSION = 'v2.7.0';
 const CACHE_STATIC = 'be-static-' + VERSION;
 const CACHE_RUNTIME = 'be-runtime-' + VERSION;
 
@@ -43,6 +43,7 @@ const PRECACHE = [
   './js/core/queue.js',
   './js/core/sync.js',
   './js/core/clipboard.js',
+  './js/core/files.js',
   './js/api/apiClient.js',
   './js/api/endpoints.js',
   './js/components/common/badges.js',

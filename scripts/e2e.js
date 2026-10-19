@@ -13,7 +13,7 @@
  * ============================================================================
  */
 
-const { callApi, fetchPage } = require('./api.js');
+const { callApi } = require('./api.js');
 
 const results = [];
 let leaderToken = '';
@@ -148,6 +148,12 @@ async function main() {
   check('номер присвоен', /^\d{3}$/.test(val(created, 'data.object.numberLabel', '')),
     val(created, 'data.object.numberLabel', '—'));
   check('статус по умолчанию «расчёт»', val(created, 'data.object.status', '') === 'расчёт');
+
+  // Телефон начинается с «+» — Google принимал его за формулу и записывал
+  // #ERROR! прямо при создании объекта. Проверяем, что текст дошёл как есть.
+  check('телефон с «+» сохраняется текстом',
+    val(created, 'data.object.phone', '') === '+7 900 000-00-00',
+    'получено: ' + val(created, 'data.object.phone', 'пусто'));
 
   console.log('\n=== 6. Расчёт ===');
   const calc = await callApi('calc.save', {
@@ -394,6 +400,9 @@ async function main() {
     check('в кабинете есть название объекта',
       val(cabData, 'data.object.title', '') === 'ПРОВЕРКА ПРИЛОЖЕНИЯ',
       val(cabData, 'data.object.title', 'нет названия'));
+    check('в кабинете телефон клиента без искажений',
+      val(cabData, 'data.object.phone', '') === '+7 900 000-00-00',
+      val(cabData, 'data.object.phone', 'пусто'));
     check('в кабинете виден расчёт',
       Array.isArray(val(cabData, 'data.estimate.rows', [])) &&
       val(cabData, 'data.estimate.rows', []).length > 0);
@@ -426,19 +435,56 @@ async function main() {
   await callApi('cabinet.link', { id: testObjectId }, leaderToken);
 
   console.log('\n=== 14. Отчёты ===');
+  // Наценка — свойство объекта, поэтому включаем её на проверяемом объекте:
+  // иначе проверять «попала ли наценка в отчёт» не на чем.
+  const reportMarkupOn = await callApi('objects.setMarkup', { id: testObjectId, on: true }, leaderToken);
+  check('наценка включена для проверки отчёта', reportMarkupOn.ok === true,
+    reportMarkupOn.ok ? '' : reportMarkupOn.error);
+
   const repLink = await callApi('report.link', { id: testObjectId }, leaderToken);
   const repUrl = val(repLink, 'data.url', '');
-  check('ссылка на отчёт получена', /page=report/.test(repUrl), repUrl ? '' : repLink.error);
-  if (repUrl) {
-    const repPage = await fetchPage(repUrl);
-    check('страница отчёта открывается', repPage.status === 200);
-    check('в отчёте есть итог расчёта', repPage.text.indexOf('ИТОГО') !== -1);
+  const repToken = val(repLink, 'data.token', '');
+  check('ссылка на отчёт получена', /#\/r\/[A-Za-z0-9_-]+$/.test(repUrl),
+    repUrl ? repUrl.slice(0, 70) + '…' : repLink.error);
+  check('ссылка на отчёт ведёт на сайт',
+    repUrl.indexOf('script.google.com') === -1 && repUrl.indexOf('#/r/') !== -1);
+
+  if (repToken) {
+    const repData = await callApi('report.data', { token: repToken });
+    check('данные отчёта отдаются без входа', repData.ok === true,
+      repData.ok ? '' : repData.error);
+    check('в отчёте есть итог по смете', typeof val(repData, 'data.totals.estimate', null) === 'number',
+      'смета: ' + val(repData, 'data.totals.estimate', 0) + ' ₽');
+    check('в отчёте есть итог за материалы', val(repData, 'data.totals.materials', 0) > 0,
+      'материалы: ' + val(repData, 'data.totals.materials', 0) + ' ₽');
+    check('наценка на материал попала в итог', val(repData, 'data.totals.markup', 0) > 0,
+      'наценка: ' + val(repData, 'data.totals.markup', 0) + ' ₽');
+    check('материалы в отчёте = закупки + наценка',
+      Math.abs(val(repData, 'data.totals.materials', 0) -
+        (val(repData, 'data.totals.purchases', 0) + val(repData, 'data.totals.markup', 0))) < 0.01,
+      'материалы: ' + val(repData, 'data.totals.materials', 0) + ' ₽');
+    check('всего к оплате = смета + материалы',
+      Math.abs(val(repData, 'data.totals.grand', 0) -
+        (val(repData, 'data.totals.estimate', 0) + val(repData, 'data.totals.materials', 0))) < 0.01,
+      'всего: ' + val(repData, 'data.totals.grand', 0) + ' ₽');
+
+    const repWrong = await callApi('report.data', { token: 'ZZZZZZZZZZ' });
+    check('чужой токен отчёт не открывает', repWrong.ok === false,
+      repWrong.ok ? 'данные отдались' : String(repWrong.error || '').slice(0, 60));
   }
 
   const repPdf = await callApi('report.pdf', { id: testObjectId }, leaderToken);
-  check('PDF-отчёт собран на Диске', repPdf.ok === true && val(repPdf, 'data.size', 0) > 0,
+  check('PDF-отчёт собран', repPdf.ok === true && val(repPdf, 'data.size', 0) > 0,
     repPdf.ok ? val(repPdf, 'data.name', '') + ' (' + Math.round(val(repPdf, 'data.size', 0) / 1024) + ' КБ)' : repPdf.error);
-  check('ссылка на PDF получена', /^https:\/\/drive\.google\.com/.test(val(repPdf, 'data.url', '')));
+
+  const pdfBase64 = String(val(repPdf, 'data.base64', ''));
+  check('PDF приходит файлом, а не ссылкой', pdfBase64.length > 1000,
+    pdfBase64 ? Math.round(pdfBase64.length / 1024) + ' КБ в ответе' : 'содержимого нет');
+  check('в ответе действительно PDF',
+    Buffer.from(pdfBase64.slice(0, 8), 'base64').toString() === '%PDF-1',
+    Buffer.from(pdfBase64.slice(0, 8), 'base64').toString());
+  check('копия файла на Диске тоже есть',
+    /^https:\/\/drive\.google\.com/.test(val(repPdf, 'data.url', '')));
 
   const repBad = await callApi('report.send', { id: testObjectId, contact: 'не-почта' }, leaderToken);
   check('отправка без почты отклонена', repBad.ok === false && repBad.code === 'VALIDATION');

@@ -32,7 +32,7 @@ import { createArchive } from './components/Archive/Archive.js';
 import { createBrigade } from './components/Brigade/Brigade.js';
 import { createVisits } from './components/Visits/Visits.js';
 import { createPrices } from './components/Prices/Prices.js';
-import { createCabinetPublic, cabinetTokenFromHash, isCabinetHash } from './components/CabinetPublic/CabinetPublic.js';
+import { createCabinetPublic, publicRouteFromHash } from './components/CabinetPublic/CabinetPublic.js';
 import { CONFIG } from './config.js';
 
 const root = qs('#app');
@@ -64,14 +64,16 @@ async function start() {
   });
 
   // Ссылку клиента могут вставить в уже открытую вкладку: тогда адрес
-  // меняется без перезагрузки, и кабинет надо показать сами.
+  // меняется без перезагрузки, и страницу надо показать сами.
   window.addEventListener('hashchange', () => {
-    if (isCabinetHash()) mountPublicCabinet(cabinetTokenFromHash());
+    const route = publicRouteFromHash();
+    if (route) mountPublicPage(route);
   });
 
-  // Короткая ссылка клиента: сразу кабинет, вход не нужен.
-  if (isCabinetHash()) {
-    mountPublicCabinet(cabinetTokenFromHash());
+  // Короткая ссылка клиента: сразу кабинет или отчёт, вход не нужен.
+  const publicRoute = publicRouteFromHash();
+  if (publicRoute) {
+    mountPublicPage(publicRoute);
     return;
   }
 
@@ -90,16 +92,17 @@ async function start() {
  * Экран входа
  * ------------------------------------------------------------------------ */
 
-/** Показать экран входа. */
 /**
- * Кабинет клиента по короткой ссылке — открывается без входа.
- * Токен из адреса и есть пропуск, поэтому экран живёт отдельно от каркаса.
+ * Страница для клиента по короткой ссылке — кабинет или отчёт.
+ * Открывается без входа: токен из адреса и есть пропуск, поэтому экран
+ * живёт отдельно от каркаса приложения.
+ * @param {{kind: string, token: string}} route
  */
-function mountPublicCabinet(token) {
+function mountPublicPage(route) {
   if (shell && typeof shell.destroy === 'function') shell.destroy();
   shell = null;
 
-  const screen = createCabinetPublic({ token: token });
+  const screen = createCabinetPublic({ token: route.token, mode: route.kind });
   setContent(root, screen.el);
 }
 
